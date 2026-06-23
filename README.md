@@ -80,8 +80,57 @@ Graph Studio представляет собой **универсальный р
 Благодаря этому граф можно использовать целиком, частично или встроить в существующую систему без копирования административной панели.
 
 ---
+## 🎬 Демонстрация работы
+
+<p align="center">
+  <a href="https://youtu.be/ftYOLl2S_44">
+    <img
+      src="https://img.youtube.com/vi/ftYOLl2S_44/maxresdefault.jpg"
+      alt="Демонстрация Graph Studio"
+      width="800"
+    >
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/ftYOLl2S_44">
+    ▶ Посмотреть видео на YouTube
+  </a>
+</p>
+
+---
+## 
 
 
+<img width="1899" height="909" alt="Снимок экрана 2026-06-23 202837" src="https://github.com/user-attachments/assets/b004f0e3-ea48-4a34-938f-d17294bd2d9a" />
+
+
+<img width="1919" height="894" alt="Снимок экрана 2026-06-23 203057" src="https://github.com/user-attachments/assets/2f81f9af-1097-4510-b98a-71068f2dbd90" />
+
+
+<img width="1919" height="899" alt="Снимок экрана 2026-06-23 203123" src="https://github.com/user-attachments/assets/a716f9da-ce3c-4c88-8b59-2a39c00e86ae" />
+
+
+
+<img width="1918" height="902" alt="Снимок экрана 2026-06-23 203150" src="https://github.com/user-attachments/assets/7e796c8f-ccf7-48c1-a544-b89f0eaee388" />
+
+
+<img width="1918" height="901" alt="Снимок экрана 2026-06-23 203423" src="https://github.com/user-attachments/assets/ef91de43-9ea8-4c04-b3ed-099cc42b3a4e" />
+
+
+<img width="1919" height="910" alt="Снимок экрана 2026-06-23 202902" src="https://github.com/user-attachments/assets/4e26e1dc-252a-42e1-8293-88e60084a8cc" />
+
+
+<img width="1919" height="906" alt="Снимок экрана 2026-06-23 203521" src="https://github.com/user-attachments/assets/43d85c88-3146-4f09-a1d6-f6477bc334b3" />
+
+
+<img width="1919" height="919" alt="Снимок экрана 2026-06-23 203447" src="https://github.com/user-attachments/assets/47996363-f333-445f-92de-ad427f7cc542" />
+
+
+<img width="1919" height="908" alt="Снимок экрана 2026-06-23 203535" src="https://github.com/user-attachments/assets/8c480ec2-487b-4822-9ea2-c185e625d201" />
+
+
+<img width="1919" height="893" alt="Снимок экрана 2026-06-23 203548" src="https://github.com/user-attachments/assets/84e51c3e-547d-4ddb-ab15-31cdc2d2ba14" />
 
 ## ⚡ Что нового в v13
 
