@@ -1,0 +1,38 @@
+Graph Studio v8 test report
+===========================
+
+Static project check
+--------------------
+PASS: 59 project files inspected
+PASS: 30 JavaScript/MJS files pass node --check
+PASS: 9 JSON files parse successfully
+PASS: all relative module imports exist
+PASS: 161 HTML ids and 131 controller selectors are consistent
+PASS: all primary resources return HTTP 200 through a local Node server
+
+Runtime simulation
+------------------
+PASS: Canvas/physics simulation remains finite
+PASS: planetary and hex layouts initialize
+PASS: 300 physics updates do not produce NaN
+PASS: transient preview flag is visible during config events
+PASS: duplicate A-B / B-A connection is blocked
+PASS: editing lock blocks modifications
+
+Link geometry
+-------------
+PASS: middle width can remain 18 px
+PASS: source endpoint is capped by source node radius
+PASS: small target endpoint narrows to about 1.7 px in the numeric fixture
+PASS: branch-flow renderer uses oriented streaks instead of circular markers
+
+MCP/project store
+-----------------
+PASS: duplicate undirected pairs are rejected by ProjectStore validation
+PASS: MCP add/change/delete connection use pair matching in both directions
+
+Browser note
+------------
+A direct headless Chromium run was attempted but did not finish in the current
+container environment before timeout. Browser-module behavior should be given a
+final visual pass in the user's normal Chrome after Docker startup.

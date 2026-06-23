@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graphstudio://config/schema",
+  "title": "Graph Studio v8 configuration",
+  "type": "object",
+  "properties": {
+    "layout": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "planetary",
+            "hex"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "editor": {
+      "type": "object",
+      "properties": {
+        "locked": {
+          "type": "boolean"
+        },
+        "uiVisible": {
+          "type": "boolean"
+        },
+        "allowCameraWhenLocked": {
+          "type": "boolean"
+        },
+        "allowHoverEditor": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "legend": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "position": {
+          "enum": [
+            "top-right",
+            "top-left",
+            "bottom-right",
+            "bottom-left"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9A-Fa-f]{6}$"
+              },
+              "shape": {
+                "enum": [
+                  "circle",
+                  "square",
+                  "diamond"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "color"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "networkPulse": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "bpm": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 240
+        },
+        "branchDelay": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "travelWindow": {
+          "type": "number",
+          "minimum": 0.08,
+          "maximum": 0.9
+        },
+        "nodeAmplitude": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "style": {
+          "enum": [
+            "organic",
+            "glow"
+          ]
+        },
+        "nodeDeformation": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5
+        },
+        "glowEnabled": {
+          "type": "boolean"
+        },
+        "linkWidthBoost": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "additionalProperties": true
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "particles": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "background": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "physics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "embed": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tooltip": {
+      "type": "object",
+      "properties": {
+        "renderer": {
+          "enum": [
+            "dom",
+            "canvas"
+          ]
+        },
+        "width": {
+          "type": "number",
+          "minimum": 220,
+          "maximum": 480
+        },
+        "maxHeight": {
+          "type": "number",
+          "minimum": 160,
+          "maximum": 620
+        },
+        "preferredSide": {
+          "enum": [
+            "auto",
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        "textAlign": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "titleAlign": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "resizable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

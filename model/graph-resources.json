@@ -1,0 +1,9 @@
+{
+  "version": "8.0.0",
+  "resources": [
+    { "uri": "graphstudio://project/current", "description": "Текущий проект" },
+    { "uri": "graphstudio://contracts/tools", "description": "Простые атомарные команды" },
+    { "uri": "graphstudio://contracts/ai-plan", "description": "Схема JSON-плана graph-studio/1" },
+    { "uri": "graphstudio://modules/map", "description": "Карта модулей" }
+  ]
+}

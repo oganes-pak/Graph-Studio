@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Graph Studio v8: модульный редактор и просмотрщик графов связей">
+  <meta name="theme-color" content="#263846">
+  <title>Graph Studio v8</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='12' fill='%23263846'/%3E%3Ccircle cx='10' cy='20' r='6' fill='%233d5c95'/%3E%3Ccircle cx='54' cy='17' r='6' fill='%236d7b88'/%3E%3Cpath d='M15 22 25 29M49 20 39 28' stroke='%238699a7' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css?v=8">
+</head>
+<body>
+  <div id="startup-error" class="startup-error" hidden></div>
+
+  <main id="app-shell" class="app-shell">
+    <aside id="control-panel" class="control-panel" aria-label="Редактор графа">
+      <header class="app-header">
+        <div class="brand-block">
+          <div class="brand-row">
+            <h1>Graph Studio</h1>
+            <span class="version-badge">v8</span>
+            <span id="mode-badge" class="mode-badge">Администратор</span>
+          </div>
+          <p>Настройка структуры, движения, оформления и машинного контракта.</p>
+        </div>
+        <div class="header-actions">
+          <button id="lock-editor" type="button">🔓 Изменения разрешены</button>
+          <button id="preview-viewer" type="button">👁 Предпросмотр</button>
+          <button id="copy-embed-code" type="button">🧩 Код модуля</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы редактора">
+        <button class="tab-button is-active" type="button" data-tab="structure">Структура</button>
+        <button class="tab-button" type="button" data-tab="motion">Движение</button>
+        <button class="tab-button" type="button" data-tab="visual">Оформление</button>
+        <button class="tab-button" type="button" data-tab="legend">Легенда</button>
+        <button class="tab-button" type="button" data-tab="ai">ИИ / JSON</button>
+        <button class="tab-button" type="button" data-tab="help">Справка</button>
+      </nav>
+
+      <div class="tab-panels">
+        <section class="tab-panel is-active" data-panel="structure">
+          <article class="panel-card">
+            <div class="card-heading"><h2>Новый узел</h2><span>01</span></div>
+            <form id="node-form" autocomplete="off">
+              <div class="field-grid">
+                <div class="field"><label for="node-id">ID</label><input id="node-id" required pattern="[A-Za-zА-Яа-яЁё0-9_-]+" placeholder="core"></div>
+                <div class="field"><label for="node-type">Вид</label><select id="node-type"><option value="core">Ядро</option><option value="group">Группа</option><option value="node" selected>Узел</option><option value="accent">Акцент</option><option value="default">Обычный</option></select></div>
+                <div class="field full"><label for="node-name">Название</label><input id="node-name" required placeholder="Название элемента"></div>
+                <div class="field"><label for="node-size">Размер</label><input id="node-size" type="number" min="3" max="100" placeholder="Авто"></div>
+                <div class="field"><label for="node-color">Цвет</label><input id="node-color" type="color" value="#6d7b88"></div>
+                <div class="field full"><label for="node-description">Описание</label><textarea id="node-description" rows="3" placeholder="Информация для карточки при наведении"></textarea></div>
+              </div>
+              <button class="primary full-button" type="submit">Добавить узел</button>
+            </form>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Новая связь</h2><span>02</span></div>
+            <form id="link-form" autocomplete="off">
+              <div class="field-grid">
+                <div class="field"><label for="link-source">Откуда</label><select id="link-source"></select></div>
+                <div class="field"><label for="link-target">Куда</label><select id="link-target"></select></div>
+                <div class="field full"><label for="link-label">Подпись</label><input id="link-label" placeholder="Например: влияет на"></div>
+                <div class="field"><label for="link-own-color">Цвет</label><input id="link-own-color" type="color" value="#8699a7"></div>
+                <div class="field"><label for="link-width">Толщина</label><input id="link-width" type="number" min="0.5" max="20" step="0.5" value="2"></div>
+                <div class="field full"><label for="link-description">Описание</label><textarea id="link-description" rows="2"></textarea></div>
+              </div>
+              <button id="add-link-button" class="primary full-button" type="submit">Добавить связь</button>
+              <p id="link-form-hint" class="form-hint">Для связи нужны минимум два узла.</p>
+            </form>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Элементы графа</h2><span>03</span></div>
+            <h3>Узлы</h3><div id="node-list" class="entity-list"></div>
+            <h3>Связи</h3><div id="link-list" class="entity-list"></div>
+          </article>
+
+          <article class="panel-card compact-card">
+            <div class="button-grid">
+              <button id="load-demo" type="button">Пример</button>
+              <button id="clear-data" class="danger" type="button">Очистить</button>
+              <button id="export-data" type="button">Экспорт проекта</button>
+              <button id="import-data" type="button">Импорт проекта</button>
+              <input id="import-file" class="visually-hidden" type="file" accept="application/json,.json">
+            </div>
+          </article>
+        </section>
+
+        <section class="tab-panel" data-panel="motion">
+          <article class="panel-card">
+            <div class="card-heading"><h2>Раскладка</h2><span>04</span></div>
+            <div class="field-grid">
+              <div class="field full"><label for="layout-type">Тип</label><select id="layout-type"><option value="planetary">Паутина от ядра</option><option value="hex">Желейные соты</option></select></div>
+              <div class="field"><label for="ring-gap">Расстояние уровней <output id="ring-gap-value"></output></label><input id="ring-gap" type="range" min="80" max="420" step="5"></div>
+              <div class="field"><label for="branch-spread">Размах ветвей <output id="branch-spread-value"></output></label><input id="branch-spread" type="range" min="0.1" max="1.2" step="0.02"></div>
+              <div class="field"><label for="hex-gap">Шаг сот <output id="hex-gap-value"></output></label><input id="hex-gap" type="range" min="55" max="220" step="5"></div>
+              <div class="field"><label for="layout-transition">Плавность перехода <output id="layout-transition-value"></output></label><input id="layout-transition" type="range" min="1" max="8" step="0.1"></div>
+              <div class="field"><label for="jelly-strength">Упругость <output id="jelly-strength-value"></output></label><input id="jelly-strength" type="range" min="2" max="18" step="0.25"></div>
+              <div class="field"><label for="physics-damping">Затухание <output id="physics-damping-value"></output></label><input id="physics-damping" type="range" min="0.8" max="8" step="0.1"></div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Камера</h2><span>05</span></div>
+            <label class="switch-row"><input id="inertia-enabled" type="checkbox"><span>Инерция вращения</span></label>
+            <label class="switch-row"><input id="auto-rotate" type="checkbox"><span>Автоматическое вращение</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="inertia-friction">Затухание инерции <output id="inertia-friction-value"></output></label><input id="inertia-friction" type="range" min="0.25" max="6" step="0.05"></div>
+              <div class="field"><label for="rotation-sensitivity">Чувствительность <output id="rotation-sensitivity-value"></output></label><input id="rotation-sensitivity" type="range" min="0.0008" max="0.008" step="0.0001"></div>
+              <div class="field"><label for="rotation-speed">Скорость, °/с <output id="rotation-speed-value"></output></label><input id="rotation-speed" type="range" min="-20" max="20" step="0.25"></div>
+              <div class="field"><label for="camera-angle-x">Угол X <output id="camera-angle-x-value"></output></label><input id="camera-angle-x" type="range" min="-89" max="89" step="1"></div>
+              <div class="field"><label for="camera-angle-y">Угол Y <output id="camera-angle-y-value"></output></label><input id="camera-angle-y" type="range" min="-180" max="180" step="1"></div>
+            </div>
+            <p class="preview-note">Изменения видны сразу. Кнопка ниже фиксирует текущий вариант.</p><div class="button-row"><button id="apply-motion" class="primary" type="button">Применить и сохранить</button><button id="cancel-motion" type="button">Отменить черновик</button><button id="reset-camera" type="button">Сбросить камеру</button></div>
+          </article>
+
+          <article class="panel-card telemetry-card">
+            <div class="card-heading"><h2>Текущее движение</h2><span class="live-badge">LIVE</span></div>
+            <dl class="telemetry-grid">
+              <div><dt>FPS</dt><dd id="telemetry-fps">0</dd></div><div><dt>Угол X</dt><dd id="telemetry-angle-x">0°</dd></div><div><dt>Угол Y</dt><dd id="telemetry-angle-y">0°</dd></div>
+              <div><dt>Скорость X</dt><dd id="telemetry-velocity-x">0</dd></div><div><dt>Скорость Y</dt><dd id="telemetry-velocity-y">0</dd></div><div><dt>Масштаб</dt><dd id="telemetry-zoom">1</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="tab-panel" data-panel="visual">
+          <article class="panel-card">
+            <div class="card-heading"><h2>Узлы и подписи</h2><span>06</span></div>
+            <div class="field-grid">
+              <div class="field"><label for="core-size">Размер ядра</label><input id="core-size" type="number" min="5" max="100"></div>
+              <div class="field"><label for="node-default-size">Размер узла</label><input id="node-default-size" type="number" min="3" max="100"></div>
+              <div class="field"><label for="core-color">Ядро</label><input id="core-color" type="color"></div>
+              <div class="field"><label for="group-color">Группа</label><input id="group-color" type="color"></div>
+              <div class="field"><label for="node-default-color">Узел</label><input id="node-default-color" type="color"></div>
+              <div class="field"><label for="accent-color">Акцент</label><input id="accent-color" type="color"></div>
+              <div class="field full"><label for="font-family">Шрифт</label><input id="font-family" type="text"></div>
+              <div class="field"><label for="node-label-mode">Показывать имена</label><select id="node-label-mode"><option value="none">Не показывать</option><option value="core">Только на ядрах</option><option value="all">На всех узлах</option></select></div>
+              <div class="field"><label for="node-label-size">Размер имени</label><input id="node-label-size" type="number" min="9" max="30"></div>
+            </div>
+            <label class="switch-row top-gap"><input id="node-label-background" type="checkbox"><span>Подложка под именем</span></label>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Органическая пульсация</h2><span>07</span></div>
+            <label class="switch-row"><input id="network-pulse-enabled" type="checkbox"><span>Передавать импульс от ядра по ветвям</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="pulse-style">Стиль</label><select id="pulse-style"><option value="organic">Органическое сжатие</option><option value="glow">Световая пульсация</option></select></div>
+              <div class="field"><label for="pulse-bpm">Частота <output id="pulse-bpm-value"></output></label><input id="pulse-bpm" type="range" min="20" max="180" step="1"></div>
+              <div class="field"><label for="pulse-delay">Задержка ветви <output id="pulse-delay-value"></output></label><input id="pulse-delay" type="range" min="0" max="0.4" step="0.005"></div>
+              <div class="field"><label for="pulse-amplitude">Изменение размера <output id="pulse-amplitude-value"></output></label><input id="pulse-amplitude" type="range" min="0" max="0.5" step="0.01"></div>
+              <div class="field"><label for="pulse-deformation">Органическая деформация <output id="pulse-deformation-value"></output></label><input id="pulse-deformation" type="range" min="0" max="0.25" step="0.005"></div>
+              <div class="field"><label for="pulse-link-width">Пульс связи <output id="pulse-link-width-value"></output></label><input id="pulse-link-width" type="range" min="0" max="3" step="0.05"></div>
+              <div class="field"><label for="pulse-color">Цвет светового режима</label><input id="pulse-color" type="color"></div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Связи, фон и частицы</h2><span>08</span></div>
+            <div class="field-grid">
+              <div class="field"><label for="link-color">Цвет связей</label><input id="link-color" type="color"></div>
+              <div class="field"><label for="link-endpoint-ratio">Сужение у узла <output id="link-endpoint-ratio-value"></output></label><input id="link-endpoint-ratio" type="range" min="0.08" max="0.9" step="0.02"></div>
+            </div>
+            <label class="switch-row top-gap"><input id="link-taper-enabled" type="checkbox"><span>Сужать связь по размеру узла</span></label>
+            <label class="switch-row top-gap"><input id="link-flow-enabled" type="checkbox"><span>Поток частиц по ветвям</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="link-flow-count">Количество потоков <output id="link-flow-count-value"></output></label><input id="link-flow-count" type="range" min="1" max="12" step="1"></div>
+              <div class="field"><label for="link-flow-speed">Скорость <output id="link-flow-speed-value"></output></label><input id="link-flow-speed" type="range" min="0.02" max="1.2" step="0.01"></div>
+              <div class="field"><label for="link-flow-size">Толщина штриха <output id="link-flow-size-value"></output></label><input id="link-flow-size" type="range" min="0.8" max="8" step="0.1"></div>
+              <div class="field"><label for="link-flow-trail">Длина хвоста <output id="link-flow-trail-value"></output></label><input id="link-flow-trail" type="range" min="0.02" max="0.25" step="0.005"></div>
+            </div>
+            <label class="switch-row top-gap"><input id="particles-enabled" type="checkbox"><span>Фоновые частицы</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="particle-count">Количество <output id="particle-count-value"></output></label><input id="particle-count" type="range" min="0" max="800" step="10"></div>
+              <div class="field"><label for="particle-size">Размер <output id="particle-size-value"></output></label><input id="particle-size" type="range" min="0.3" max="4" step="0.1"></div>
+              <div class="field"><label for="particle-speed">Скорость <output id="particle-speed-value"></output></label><input id="particle-speed" type="range" min="0" max="60" step="1"></div>
+              <div class="field"><label for="particle-color">Цвет</label><input id="particle-color" type="color"></div>
+            </div>
+            <label class="switch-row top-gap"><input id="background-dots-enabled" type="checkbox"><span>Точки на фоне</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="background-dot-size">Размер точек <output id="background-dot-size-value"></output></label><input id="background-dot-size" type="range" min="0.3" max="4" step="0.1"></div>
+              <div class="field"><label for="background-dot-opacity">Контраст <output id="background-dot-opacity-value"></output></label><input id="background-dot-opacity" type="range" min="0.05" max="1" step="0.05"></div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Информационное окно</h2><span>09</span></div>
+            <div class="field-grid">
+              <div class="field"><label for="tooltip-width">Ширина <output id="tooltip-width-value"></output></label><input id="tooltip-width" type="range" min="220" max="480" step="10"></div>
+              <div class="field"><label for="tooltip-max-height">Макс. высота <output id="tooltip-max-height-value"></output></label><input id="tooltip-max-height" type="range" min="160" max="620" step="10"></div>
+              <div class="field"><label for="tooltip-side">Расположение</label><select id="tooltip-side"><option value="auto">С противоположной стороны</option><option value="left">Слева</option><option value="right">Справа</option><option value="top">Сверху</option><option value="bottom">Снизу</option></select></div>
+              <div class="field"><label for="tooltip-text-align">Текст</label><select id="tooltip-text-align"><option value="center">По центру</option><option value="left">По левому краю</option><option value="right">По правому краю</option></select></div>
+              <div class="field"><label for="tooltip-title-align">Заголовок</label><select id="tooltip-title-align"><option value="center">По центру</option><option value="left">По левому краю</option><option value="right">По правому краю</option></select></div>
+            </div>
+            <label class="switch-row top-gap"><input id="tooltip-resizable" type="checkbox"><span>Разрешить менять размер окна мышью</span></label>
+            <p class="preview-note">Оформление меняется в реальном времени. «Применить» делает его постоянным.</p><div class="button-row"><button id="apply-visual" class="primary" type="button">Применить и сохранить</button><button id="cancel-visual" type="button">Отменить черновик</button><button id="reset-config" type="button">Сбросить настройки</button></div>
+          </article>
+        </section>
+
+        <section class="tab-panel" data-panel="legend">
+          <article class="panel-card">
+            <div class="card-heading"><h2>Легенда</h2><span>10</span></div>
+            <label class="switch-row"><input id="legend-enabled" type="checkbox"><span>Показывать легенду</span></label>
+            <div class="field-grid top-gap">
+              <div class="field"><label for="legend-title">Заголовок</label><input id="legend-title"></div>
+              <div class="field"><label for="legend-position">Положение</label><select id="legend-position"><option value="top-right">Сверху справа</option><option value="top-left">Сверху слева</option><option value="bottom-right">Снизу справа</option><option value="bottom-left">Снизу слева</option></select></div>
+            </div>
+          </article>
+          <article class="panel-card">
+            <div class="card-heading"><h2>Новый пункт</h2><span>11</span></div>
+            <form id="legend-form">
+              <div class="field-grid">
+                <div class="field"><label for="legend-item-id">ID</label><input id="legend-item-id" required></div>
+                <div class="field"><label for="legend-item-label">Название</label><input id="legend-item-label" required></div>
+                <div class="field"><label for="legend-item-color">Цвет</label><input id="legend-item-color" type="color" value="#6d7b88"></div>
+                <div class="field"><label for="legend-item-shape">Форма</label><select id="legend-item-shape"><option value="circle">Круг</option><option value="square">Квадрат</option><option value="diamond">Ромб</option></select></div>
+              </div>
+              <button class="primary full-button" type="submit">Добавить обозначение</button>
+            </form>
+            <div id="legend-list" class="entity-list top-gap"></div>
+          </article>
+        </section>
+
+        <section class="tab-panel" data-panel="ai">
+          <article class="panel-card">
+            <div class="card-heading"><h2>Простой JSON-план</h2><span>12</span></div>
+            <p class="form-hint">Работает без MCP. ИИ должен вернуть один объект формата <code>graph-studio/1</code> с массивами <code>nodes</code> и <code>connections</code>.</p>
+            <textarea id="ai-plan-json" class="code-editor plan-editor" spellcheck="false"></textarea>
+            <div class="button-row"><button id="apply-ai-plan" class="primary" type="button">Построить граф</button><button id="load-ai-template" type="button">Шаблон</button><button id="export-ai-plan" type="button">Выгрузить план</button></div>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Атомарные команды</h2><span>13</span></div>
+            <p class="form-hint">Одинаковые команды работают из браузера, postMessage и MCP: <code>add_node</code>, <code>add_connection</code>, <code>set_layout</code>.</p>
+            <textarea id="console-input" class="code-editor" spellcheck="false">graph.run('get_project')</textarea>
+            <div class="button-row"><button id="console-run" class="primary" type="button">Выполнить</button><button id="console-example" type="button">Пример</button><button id="console-clear" type="button">Очистить вывод</button></div>
+            <pre id="console-output" class="console-output" aria-live="polite">Консоль готова.</pre>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><h2>Текущая конфигурация</h2><span class="live-badge">JSON</span></div>
+            <textarea id="config-json" class="code-editor config-editor" spellcheck="false"></textarea>
+            <div class="button-row"><button id="apply-config-json" class="primary" type="button">Применить</button><button id="refresh-config-json" type="button">Обновить</button><button id="copy-config-json" type="button">Копировать</button></div>
+          </article>
+        </section>
+
+        <section class="tab-panel" data-panel="help">
+          <article class="panel-card help-card">
+            <div class="card-heading"><h2>Режимы</h2><span>14</span></div>
+            <dl class="help-list">
+              <div><dt>Администратор</dt><dd>Создаёт граф, меняет оформление и экспортирует проект.</dd></div>
+              <div><dt>Только просмотр</dt><dd>Панель редактора скрыта, данные и настройки нельзя изменить. Камера и карточки информации остаются доступными.</dd></div>
+              <div><dt>JSON-план</dt><dd>Самый простой способ для ИИ без MCP: один проверяемый JSON вместо произвольного кода.</dd></div>
+              <div><dt>Атомарные команды</dt><dd>Каждая команда выполняет одно понятное действие и имеет одинаковое имя во всех интеграциях.</dd></div>
+            </dl>
+          </article>
+          <article class="panel-card help-card"><h2>Управление графом</h2><ul><li>Пустое место: вращение с инерцией.</li><li>Узел: перетаскивание и желейная реакция.</li><li>Колесо: масштаб.</li><li>Наведение на узел: информационная карточка.</li><li>Наведение на связь в режиме администратора: редактор связи.</li></ul></article>
+        </section>
+      </div>
+    </aside>
+
+    <section class="graph-stage" aria-label="Область графа">
+      <div id="canvas-card" class="canvas-card">
+        <canvas id="graph-canvas" tabindex="0" aria-label="Интерактивный граф связей"></canvas>
+        <div id="pointer-indicator" class="pointer-indicator" hidden></div>
+        <div id="empty-overlay" class="empty-overlay"><strong>Граф пуст</strong><span>Добавьте узлы или импортируйте JSON-план.</span></div>
+        <div id="interaction-hint" class="interaction-hint">Вращение: тянуть фон · масштаб: колесо · информация: навести на узел</div>
+        <div id="graph-toolbar" class="graph-toolbar">
+          <button id="quick-planetary" type="button">Паутина</button>
+          <button id="quick-hex" type="button">Соты</button>
+          <button id="pause-button" type="button">Пауза</button>
+          <button id="stage-lock-editor" type="button" title="Блокировка изменений">🔓</button>
+        </div>
+        <button id="return-admin" class="return-admin" type="button" hidden>Вернуться в редактор</button>
+        <aside id="graph-legend" class="graph-legend" hidden></aside>
+
+        <article id="node-info-popover" class="node-info-popover graph-popover" hidden>
+          <header class="popover-heading"><div class="popover-title-wrap"><span data-node-info-type class="popover-kicker"></span><h2 data-node-info-title></h2></div><button data-node-info-close type="button" aria-label="Закрыть">×</button></header>
+          <div data-node-info-description class="node-info-description"></div>
+          <div class="resize-hint">Размер окна можно менять за правый нижний угол</div>
+        </article>
+
+        <article id="link-editor-popover" class="link-editor-popover graph-popover" hidden>
+          <header class="popover-heading"><div><span class="popover-kicker">Связь</span><h2 data-link-editor-title></h2></div><button data-link-editor-close type="button" aria-label="Закрыть">×</button></header>
+          <label>Подпись<input data-link-editor-label></label>
+          <div class="popover-grid"><label>Цвет<input data-link-editor-color type="color"></label><label>Толщина<input data-link-editor-width type="number" min="0.5" max="20" step="0.5"></label></div>
+          <label>Описание<textarea data-link-editor-description rows="3"></textarea></label>
+          <div class="button-row"><button data-link-editor-save class="primary" type="button">Применить</button><button data-link-editor-cancel type="button">Отменить</button><button data-link-editor-remove class="danger" type="button">Удалить</button></div>
+        </article>
+
+        <div id="status-bar" class="status-bar" role="status">Запуск…</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const panel = document.getElementById('startup-error');
+      const show = (message) => { panel.hidden = false; panel.textContent = message; };
+      window.addEventListener('error', (event) => {
+        const source = event.target?.src || event.target?.href;
+        if (source) show(`Не удалось загрузить ресурс: ${source}`);
+      }, true);
+      window.addEventListener('unhandledrejection', (event) => show(`Ошибка: ${event.reason?.message || event.reason}`));
+      setTimeout(() => { if (!window.__GRAPH_APP_READY__) show('editor.js не запустился. Проверьте пути файлов и кеш браузера.'); }, 2500);
+    })();
+  </script>
+  <script type="module" src="./editor.js?v=8"></script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+{
+  "version": "8.0.0",
+  "data": {
+    "nodes": [
+      {
+        "id": "core",
+        "type": "core",
+        "name": "Ядро",
+        "description": "Источник сердечного импульса"
+      },
+      {
+        "id": "branch_a",
+        "type": "group",
+        "name": "Ветвь A"
+      },
+      {
+        "id": "node_a1",
+        "type": "node",
+        "name": "Узел A1"
+      },
+      {
+        "id": "branch_b",
+        "type": "group",
+        "name": "Ветвь B"
+      }
+    ],
+    "links": [
+      {
+        "source": "core",
+        "target": "branch_a",
+        "label": "Поток A",
+        "color": "#708b9b",
+        "width": 2.5
+      },
+      {
+        "source": "branch_a",
+        "target": "node_a1",
+        "label": "Продолжение A",
+        "color": "#708b9b",
+        "width": 2
+      },
+      {
+        "source": "core",
+        "target": "branch_b",
+        "label": "Поток B",
+        "color": "#708b9b",
+        "width": 2.5
+      }
+    ]
+  },
+  "config": {
+    "layout": {
+      "type": "planetary"
+    },
+    "editor": {
+      "locked": false,
+      "uiVisible": true,
+      "mode": "admin",
+      "allowHoverEditor": true
+    },
+    "legend": {
+      "enabled": true,
+      "title": "Легенда",
+      "position": "top-right",
+      "items": [
+        {
+          "id": "core",
+          "label": "Ядро",
+          "color": "#d13b4b",
+          "shape": "circle"
+        },
+        {
+          "id": "group",
+          "label": "Ветвь",
+          "color": "#4f7488",
+          "shape": "diamond"
+        },
+        {
+          "id": "node",
+          "label": "Узел",
+          "color": "#78909c",
+          "shape": "circle"
+        }
+      ]
+    },
+    "networkPulse": {
+      "enabled": true,
+      "bpm": 64,
+      "branchDelay": 0.115
+    }
+  }
+}

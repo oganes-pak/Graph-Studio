@@ -1,0 +1,13 @@
+{
+  "version": "8.0.0",
+  "prompts": [
+    {
+      "name": "edit-graph-safely",
+      "description": "get_project, одна атомарная команда, повторная проверка."
+    },
+    {
+      "name": "build-graph-from-text",
+      "description": "Извлечь нейтральную структуру core → group → node без выдуманных оценок."
+    }
+  ]
+}

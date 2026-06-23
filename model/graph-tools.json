@@ -1,0 +1,350 @@
+{
+  "version": "8.0.0",
+  "tools": [
+    {
+      "name": "get_project",
+      "title": "Получить граф",
+      "description": "Возвращает текущие узлы, связи, настройки и состояние.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "replace_graph",
+      "title": "Заменить граф",
+      "description": "Полностью заменяет узлы и связи.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "nodes",
+          "connections"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_node",
+      "title": "Добавить узел",
+      "description": "Добавляет один узел с уникальным id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "core",
+              "group",
+              "node",
+              "accent",
+              "default"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "size": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "change_node",
+      "title": "Изменить узел",
+      "description": "Изменяет свойства существующего узла.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "changes": {
+            "type": "object",
+            "minProperties": 1
+          }
+        },
+        "required": [
+          "id",
+          "changes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_node",
+      "title": "Удалить узел",
+      "description": "Удаляет узел и его связи.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_connection",
+      "title": "Добавить связь",
+      "description": "Соединяет два существующих узла. Между одной парой узлов допускается только одна связь независимо от направления.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "change_connection",
+      "title": "Изменить связь",
+      "description": "Изменяет одну связь from → to.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "changes": {
+            "type": "object",
+            "minProperties": 1
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "changes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_connection",
+      "title": "Удалить связь",
+      "description": "Удаляет одну связь from → to.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_layout",
+      "title": "Выбрать раскладку",
+      "description": "Выбирает паутину или соты.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "layout": {
+            "type": "string",
+            "enum": [
+              "planetary",
+              "hex"
+            ]
+          }
+        },
+        "required": [
+          "layout"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "change_view",
+      "title": "Изменить внешний вид",
+      "description": "Применяет частичные настройки отображения.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "object",
+            "minProperties": 1
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_read_only",
+      "title": "Режим только просмотра",
+      "description": "Включает или выключает запрет редактирования.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_legend_item",
+      "title": "Добавить пункт легенды",
+      "description": "Добавляет одно обозначение.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "circle",
+              "square",
+              "diamond"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "color"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_legend_item",
+      "title": "Удалить пункт легенды",
+      "description": "Удаляет обозначение по id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$",
+            "description": "Короткий стабильный идентификатор без пробелов."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

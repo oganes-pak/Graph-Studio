@@ -1,0 +1,12 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Graph Studio Viewer</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}graph-studio-widget{height:100%}</style></head><body>
+<graph-studio-widget id="graph" height="100vh" mode="viewer" controls></graph-studio-widget>
+<script type="module">
+import './src/embed/graph-widget.js';
+const widget=document.getElementById('graph');
+const params=new URLSearchParams(location.search);
+if(params.get('src'))widget.setAttribute('src',params.get('src'));
+if(params.get('layout'))widget.setAttribute('layout',params.get('layout'));
+if(params.get('mode')==='admin')widget.setAttribute('mode','admin');
+if(params.get('controls')==='false')widget.removeAttribute('controls');
+if(!params.get('src'))widget.setData({nodes:[{id:'core',type:'core',name:'Главная тема'},{id:'a',type:'group',name:'Ветка A'},{id:'b',type:'node',name:'Узел B'}],links:[{source:'core',target:'a'},{source:'a',target:'b'}]});
+</script></body></html>

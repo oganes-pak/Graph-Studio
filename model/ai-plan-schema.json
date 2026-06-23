@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph-studio/ai-plan-schema/1",
+  "title": "Graph Studio AI Plan",
+  "description": "Простой декларативный формат для построения графа без MCP.",
+  "type": "object",
+  "required": ["format", "nodes", "connections"],
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "graph-studio/1" },
+    "title": { "type": "string" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["core", "group", "node", "accent", "default"] },
+          "description": { "type": "string" },
+          "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+          "size": { "type": "number", "minimum": 3, "maximum": 100 }
+        }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+          "width": { "type": "number", "minimum": 0.5, "maximum": 20 }
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "layout": { "enum": ["planetary", "hex"] },
+        "mode": { "enum": ["admin", "viewer"] },
+        "legend": { "type": "object" },
+        "appearance": { "type": "object" }
+      }
+    }
+  }
+}
