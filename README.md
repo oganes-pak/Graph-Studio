@@ -80,7 +80,24 @@ Graph Studio представляет собой **универсальный р
 Благодаря этому граф можно использовать целиком, частично или встроить в существующую систему без копирования административной панели.
 
 ---
+## 🎬 Демонстрация работы
 
+<p align="center">
+  <a href="https://youtu.be/ftYOLl2S_44">
+    <img
+      src="https://img.youtube.com/vi/ftYOLl2S_44/maxresdefault.jpg"
+      alt="Демонстрация Graph Studio"
+      width="800"
+    >
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/ftYOLl2S_44">
+    ▶ Посмотреть видео на YouTube
+  </a>
+</p>
+--
 ## 🎯 Для чего нужна программа
 
 Graph Studio решает несколько практических задач.
