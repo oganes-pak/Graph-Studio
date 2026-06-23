@@ -1,5 +1,5 @@
 /**
- * Graph3DEngine v8.
+ * Graph3DEngine v14.
  * Только состояние сцены, физика, интеракция и Canvas-рендеринг.
  * Формы, легенда, MCP и встраивание находятся в отдельных модулях.
  */
@@ -17,6 +17,15 @@ import { heartBeat, nodeHeartWave, linkHeartWave } from '../animation/heart-puls
 import { findLinkAtPoint } from '../interaction/hit-test.js';
 import { buildOrganicBlobPath } from '../render/organic-shapes.js';
 import { buildLinkRibbonGeometry, drawTaperedRibbon, drawFlowStreak } from '../render/link-ribbon.js';
+import { normalizeDiagramType, getDiagramDefinition } from '../diagrams/registry.js';
+import { inferNodeShape, traceNodeShape } from '../render/diagrams/node-shapes.js';
+import { drawStructuredConnector, drawFishboneSpine, drawRouteStreak } from '../render/diagrams/connectors.js';
+import { drawSankeyLinks, drawSankeyNode } from '../render/diagrams/sankey-renderer.js';
+import { drawRadarDiagram, radarValueFromPointer } from '../render/diagrams/radar-renderer.js';
+import { drawBubbleAxes } from '../render/diagrams/bubble-renderer.js';
+import { convertDiagramData, interpretDiagramData } from '../io/diagram-interpreter.js';
+import { applyAutomaticNodeColors, applyAutomaticSeriesColors, nextAutomaticColor } from '../core/color-palette.js';
+import { createSpatialGrid, forEachNearbyPair } from '../performance/spatial-grid.js';
 
 export class Graph3DEngine {
   constructor({ canvas, config = {}, data = null } = {}) {
@@ -29,7 +38,7 @@ export class Graph3DEngine {
     if (!this.ctx) throw new Error('Браузер не поддерживает Canvas 2D.');
 
     this.config = deepMerge(DEFAULT_GRAPH_CONFIG, config);
-    this.data = { nodes: [], links: [] };
+    this.data = { nodes: [], links: [], chart: { metrics: [], series: [] }, document: { title: '', subtitle: '', sections: [] } };
     this.nodes = [];
     this.links = [];
     this.springPairs = [];
@@ -38,7 +47,17 @@ export class Graph3DEngine {
     this.physicsAdjacency = new Map();
     this.depthSortedNodes = [];
     this.particles = [];
+    this.layoutMeta = {};
+    this.chartRegions = [];
+    this.hoveredChartItem = null;
+    this.dragDataDirty = false;
+    this.diagramDataCache = new Map();
     this.viewport = { width: 1, height: 1, centerX: 0.5, centerY: 0.5, dpr: 1 };
+    this.backgroundCache = { canvas: null, key: '', dirty: true };
+    this.diagramTransition = null;
+    this.transitionFrameId = null;
+    this.lastRenderedAt = 0;
+    this.lastHoverCheckAt = 0;
 
     this.camera = {
       angleX: Number(this.config.camera.rotationX),
@@ -93,8 +112,19 @@ export class Graph3DEngine {
 
   setData(data, { force = false, transient = false } = {}) {
     this.assertEditable('замена данных', force);
-    validateGraphData(data);
-    this.data = cloneValue(data);
+    const normalized = {
+      nodes: applyAutomaticNodeColors(Array.isArray(data?.nodes) ? data.nodes : []),
+      links: Array.isArray(data?.links) ? data.links : [],
+      chart: isPlainObject(data?.chart)
+        ? { ...data.chart, series: applyAutomaticSeriesColors(Array.isArray(data.chart.series) ? data.chart.series : []) }
+        : { metrics: [], series: [] },
+      document: isPlainObject(data?.document)
+        ? cloneValue(data.document)
+        : { title: '', subtitle: '', sections: [] }
+    };
+    validateGraphData(normalized);
+    this.data = cloneValue(normalized);
+    this.diagramDataCache.set(this.normalizedDiagramType(), cloneValue(this.data));
     this.rebuildScene(true);
     this.lastChangeTransient = Boolean(transient);
     this.dispatch('graph:datachange', this.exportData());
@@ -106,6 +136,7 @@ export class Graph3DEngine {
   setConfig(config, { preserveCamera = true, force = false, transient = false } = {}) {
     this.assertEditable('изменение конфигурации', force);
     this.config = deepMerge(DEFAULT_GRAPH_CONFIG, config);
+    this.backgroundCache.dirty = true;
     this.camera.targetZoom = clamp(
       Number(this.config.camera.zoom),
       Number(this.config.camera.minZoom),
@@ -137,9 +168,10 @@ export class Graph3DEngine {
     this.assertEditable('изменение конфигурации', force);
     if (!isPlainObject(patch)) throw new TypeError('Патч конфигурации должен быть объектом.');
     this.config = deepMerge(this.config, patch);
+    if (patch.background || patch.colors || patch.performance || patch.layout || patch.diagram) this.backgroundCache.dirty = true;
     this.editingLocked = Boolean(this.config.editor?.locked);
 
-    const rebuildKeys = ['layout', 'physics', 'node', 'colors'];
+    const rebuildKeys = ['diagram', 'layout', 'physics', 'node', 'colors'];
     const shouldRebuild = rebuild === true
       || (rebuild === 'auto' && rebuildKeys.some((key) => Object.hasOwn(patch, key)));
 
@@ -218,12 +250,15 @@ export class Graph3DEngine {
   getState() {
     return {
       paused: this.paused,
+      diagramType: this.normalizedDiagramType(),
+      diagram: getDiagramDefinition(this.normalizedDiagramType()),
       layout: this.normalizedLayoutType(),
       nodeCount: this.nodes.length,
       linkCount: this.links.length,
       editingLocked: this.editingLocked,
       hoveredNodeId: this.hoveredNode?.id ?? null,
       hoveredLinkId: this.hoveredLink?.id ?? null,
+      hoveredChartItem: this.hoveredChartItem ? this.serializeChartItem(this.hoveredChartItem) : null,
       camera: {
         angleX: this.camera.angleX,
         angleY: this.camera.angleY,
@@ -240,17 +275,140 @@ export class Graph3DEngine {
     };
   }
 
+
+  /** Снимает текущий кадр перед перестройкой диаграммы. */
+  captureTransitionSnapshot() {
+    if (this.destroyed || this.prefersReducedMotion) return null;
+    const duration = Number(this.config.animation?.diagramTransitionDuration ?? 0);
+    if (duration <= 0 || !this.canvas.width || !this.canvas.height) return null;
+    this.renderOnce();
+    const snapshot = createCanvasSurface(this.canvas.width, this.canvas.height);
+    if (!snapshot) return null;
+    snapshot.width = this.canvas.width;
+    snapshot.height = this.canvas.height;
+    const snapshotContext = snapshot.getContext('2d');
+    snapshotContext?.drawImage(this.canvas, 0, 0);
+    return snapshot;
+  }
+
+  /** Запускает общий crossfade между любыми двумя визуальными моделями. */
+  beginDiagramTransition(snapshot, fromType, toType) {
+    if (!snapshot || fromType === toType) return;
+    this.diagramTransition = {
+      snapshot,
+      fromType,
+      toType,
+      start: performance.now(),
+      duration: Math.max(120, Number(this.config.animation?.diagramTransitionDuration ?? 720))
+    };
+    this.dispatch('graph:transitionstart', { from: fromType, to: toType });
+    if (this.paused) this.scheduleTransitionFrame();
+  }
+
+  scheduleTransitionFrame() {
+    if (this.transitionFrameId != null || !this.diagramTransition) return;
+    this.transitionFrameId = requestAnimationFrame(() => {
+      this.transitionFrameId = null;
+      this.renderOnce();
+      if (this.diagramTransition) this.scheduleTransitionFrame();
+    });
+  }
+
+  drawTransitionOverlay(now = performance.now()) {
+    const transition = this.diagramTransition;
+    if (!transition) return;
+    const raw = clamp((now - transition.start) / transition.duration, 0, 1);
+    const eased = raw * raw * (3 - 2 * raw);
+    this.ctx.save();
+    this.ctx.globalAlpha = 1 - eased;
+    this.ctx.drawImage(transition.snapshot, 0, 0, this.viewport.width, this.viewport.height);
+    this.ctx.restore();
+    if (raw >= 1) {
+      const detail = { from: transition.fromType, to: transition.toType };
+      this.diagramTransition = null;
+      this.dispatch('graph:transitionend', detail);
+    }
+  }
+
   setLayout(type) {
     const normalized = type === 'grid' ? 'hex' : type;
     if (!['planetary', 'hex'].includes(normalized)) {
-      throw new Error(`Неизвестная раскладка: ${type}`);
+      throw new Error(`Неизвестная сетевая раскладка: ${type}`);
     }
-    return this.updateConfig({ layout: { type: normalized } });
+    const from = `${this.normalizedDiagramType()}:${this.normalizedLayoutType()}`;
+    const snapshot = this.captureTransitionSnapshot();
+    this.updateConfig({ diagram: { type: 'network' }, layout: { type: normalized } });
+    this.beginDiagramTransition(snapshot, from, `network:${normalized}`);
+    return this;
+  }
+
+  /**
+   * Переключает тип диаграммы и каждый раз интерпретирует актуальные данные
+   * под модель выбранного представления. Старые снимки не восстанавливаются,
+   * поэтому правки пользователя не подменяются устаревшим состоянием.
+   */
+  setDiagramType(type, { interpret = true } = {}) {
+    this.assertEditable('переключение типа диаграммы');
+    const targetType = normalizeDiagramType(type);
+    const currentType = this.normalizedDiagramType();
+    if (targetType === currentType) return this;
+
+    const transitionSnapshot = this.captureTransitionSnapshot();
+    this.diagramDataCache.set(currentType, cloneValue(this.data));
+    const interpretation = interpret
+      ? interpretDiagramData(this.data, currentType, targetType)
+      : { data: cloneValue(this.data), report: null };
+    const targetData = interpretation.data;
+
+    this.config = deepMerge(this.config, { diagram: { type: targetType } });
+    this.data = {
+      nodes: Array.isArray(targetData?.nodes)
+        ? applyAutomaticNodeColors(cloneValue(targetData.nodes).map(({ manualPosition, ...node }) => node))
+        : [],
+      links: Array.isArray(targetData?.links) ? cloneValue(targetData.links) : [],
+      chart: isPlainObject(targetData?.chart)
+        ? { ...cloneValue(targetData.chart), series: applyAutomaticSeriesColors(Array.isArray(targetData.chart.series) ? targetData.chart.series : []) }
+        : { metrics: [], series: [] },
+      document: isPlainObject(targetData?.document)
+        ? cloneValue(targetData.document)
+        : { title: '', subtitle: '', sections: [] }
+    };
+    validateGraphData(this.data);
+    this.diagramDataCache.set(targetType, cloneValue(this.data));
+    this.hoveredNode = null;
+    this.hoveredLink = null;
+    this.hoveredChartItem = null;
+    this.dispatch('graph:hoverchange', null);
+    this.dispatch('graph:charthoverchange', null);
+    this.rebuildScene(false);
+    this.beginDiagramTransition(transitionSnapshot, currentType, targetType);
+    this.dispatch('graph:configchange', cloneValue(this.config));
+    this.dispatch('graph:datachange', this.exportData());
+    this.dispatch('graph:diagramchange', {
+      from: currentType, to: targetType, interpreted: interpret, report: interpretation.report
+    });
+    return this;
+  }
+
+  setChartData(chart) {
+    if (!isPlainObject(chart)) throw new TypeError('Данные chart должны быть объектом.');
+    return this.setData({
+      ...this.data,
+      chart: { ...chart, series: applyAutomaticSeriesColors(Array.isArray(chart.series) ? chart.series : []) }
+    });
+  }
+
+  setDocumentData(documentData) {
+    if (!isPlainObject(documentData)) throw new TypeError('Данные document должны быть объектом.');
+    return this.setData({ ...this.data, document: cloneValue(documentData) });
   }
 
   addNode(node, parentId = null) {
     const next = cloneValue(this.data);
-    next.nodes.push(node);
+    const normalizedNode = node?.color
+      ? cloneValue(node)
+      : { ...cloneValue(node), color: nextAutomaticColor(next.nodes), colorSource: 'auto' };
+    next.nodes.push(normalizedNode);
     if (parentId) next.links.push({ source: parentId, target: node.id });
     return this.setData(next);
   }
@@ -266,7 +424,9 @@ export class Graph3DEngine {
   removeNode(id) {
     const next = {
       nodes: this.data.nodes.filter((node) => node.id !== id),
-      links: this.data.links.filter((link) => link.source !== id && link.target !== id)
+      links: this.data.links.filter((link) => link.source !== id && link.target !== id),
+      chart: cloneValue(this.data.chart),
+      document: cloneValue(this.data.document)
     };
     return this.setData(next);
   }
@@ -309,8 +469,11 @@ export class Graph3DEngine {
     const previousNodes = preserveMotion
       ? new Map(this.nodes.map((node) => [node.id, node]))
       : new Map();
+    const diagramType = this.normalizedDiagramType();
 
-    if (!this.data.nodes.length) {
+    // Радар не использует обычные узлы сцены, но должен отрисовываться даже
+    // при пустом массиве nodes. Остальные режимы сохраняют прежнее поведение.
+    if (!this.data.nodes.length && !['radar', 'info'].includes(diagramType)) {
       this.nodes = [];
       this.links = [];
       this.springPairs = [];
@@ -320,31 +483,72 @@ export class Graph3DEngine {
       this.hoveredNode = null;
       this.hoveredLink = null;
       this.draggedNode = null;
+      this.layoutMeta = {};
       this.renderOnce();
       return;
     }
 
-    const { positions, levels } = layoutGraph(this.data.nodes, this.data.links, this.config);
+    const layoutResult = layoutGraph(this.data.nodes, this.data.links, this.config, { viewport: this.viewport });
+    const { positions, levels } = layoutResult;
+    this.layoutMeta = { ...layoutResult };
+    delete this.layoutMeta.positions;
+    delete this.layoutMeta.levels;
     const coreId = getCoreId(this.data.nodes);
     resolveCollisions(this.data.nodes, positions, this.config, coreId);
+
+    const bubbleValues = this.data.nodes.map((node) => Number(node.value ?? node.size ?? 1)).filter(Number.isFinite);
+    const bubbleMax = Math.max(1, ...bubbleValues);
+    const bubbleMinRadius = Number(this.config.diagram?.bubble?.minRadius ?? 8);
+    const bubbleMaxRadius = Number(this.config.diagram?.bubble?.maxRadius ?? 58);
 
     this.nodes = this.data.nodes.map((sourceNode) => {
       const level = levels.get(sourceNode.id) ?? 1;
       const type = normalizeNodeType(sourceNode, level, coreId);
-      const anchor = positions.get(sourceNode.id) ?? { x: 0, y: 0, z: 0 };
-      const previous = previousNodes.get(sourceNode.id);
+      const layoutAnchor = positions.get(sourceNode.id) ?? { x: 0, y: 0, z: 0 };
+      const anchor = sourceNode.manualPosition && isPlainObject(sourceNode.manualPosition)
+        ? {
+            x: Number(sourceNode.manualPosition.x ?? layoutAnchor.x),
+            y: Number(sourceNode.manualPosition.y ?? layoutAnchor.y),
+            z: Number(sourceNode.manualPosition.z ?? layoutAnchor.z)
+          }
+        : layoutAnchor;
+      const previous = ['sankey', 'bubble', 'radar'].includes(diagramType)
+        ? null
+        : previousNodes.get(sourceNode.id);
       const defaultSize = Number(this.config.node.sizes[type] ?? this.config.node.sizes.default);
       const color = sourceNode.color
         ?? sourceNode.itemStyle?.color
         ?? this.config.colors[type]
         ?? this.config.colors.default;
+      const bubbleRadius = bubbleMinRadius
+        + Math.sqrt(Math.max(0, Number(sourceNode.value ?? sourceNode.size ?? 1)) / bubbleMax)
+          * (bubbleMaxRadius - bubbleMinRadius);
+      const bubbleDataX = Number.isFinite(Number(sourceNode.x ?? sourceNode.valueX))
+        ? Number(sourceNode.x ?? sourceNode.valueX)
+        : 0;
+      const bubbleDataY = Number.isFinite(Number(sourceNode.y ?? sourceNode.valueY))
+        ? Number(sourceNode.y ?? sourceNode.valueY)
+        : 0;
 
       return {
         ...cloneValue(sourceNode),
         type,
         level,
         color,
-        originalSize: Number(sourceNode.size ?? sourceNode.symbolSize ?? defaultSize),
+        dataX: bubbleDataX,
+        dataY: bubbleDataY,
+        originalSize: diagramType === 'bubble'
+          ? bubbleRadius
+          : Number(sourceNode.size ?? sourceNode.symbolSize ?? defaultSize),
+        sankeyHeight: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.height ?? 0),
+        sankeyValue: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.value ?? 0),
+        sankeyLevel: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.level ?? level),
+        sankeyLabelMaxWidth: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.labelMaxWidth ?? 96),
+        sankeyLabelFontSize: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.labelFontSize ?? 11),
+        sankeyLabelLineHeight: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.labelLineHeight ?? 14),
+        flowWidth: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.width ?? 0),
+        flowHeight: Number(layoutResult.nodeMetrics?.get(sourceNode.id)?.height ?? 0),
+        opacity: clamp(Number(sourceNode.opacity ?? this.config.node.opacity ?? 1), 0.05, 1),
         pulseAmplitude: Number(this.config.node.pulseAmplitude[type] ?? this.config.node.pulseAmplitude.default),
         anchorX: anchor.x,
         anchorY: anchor.y,
@@ -358,13 +562,14 @@ export class Graph3DEngine {
         fx: 0,
         fy: 0,
         fz: 0,
-        x: previous?.x ?? anchor.x,
-        y: previous?.y ?? anchor.y,
+        x: diagramType === 'bubble' ? bubbleDataX : (previous?.x ?? anchor.x),
+        y: diagramType === 'bubble' ? bubbleDataY : (previous?.y ?? anchor.y),
         z: previous?.z ?? anchor.z,
         sx: 0,
         sy: 0,
         scale: 1,
-        visible: true
+        visible: true,
+        renderBounds: null
       };
     });
 
@@ -387,7 +592,8 @@ export class Graph3DEngine {
         color: sourceLink.color
           ?? (sourceNode?.type === 'core' ? this.config.colors.linkCore : this.config.colors.linkDefault),
         width: Number(sourceLink.width
-          ?? (sourceNode?.type === 'core' ? this.config.links.widthCore : this.config.links.widthDefault))
+          ?? (sourceNode?.type === 'core' ? this.config.links.widthCore : this.config.links.widthDefault)),
+        value: Number(sourceLink.value ?? sourceLink.weight ?? sourceLink.width ?? 1)
       };
     });
 
@@ -402,11 +608,14 @@ export class Graph3DEngine {
     const addPair = (nodeA, nodeB, strength, virtual = false) => {
       if (!nodeA || !nodeB || nodeA === nodeB) return;
       const key = pairKey(nodeA.id, nodeB.id);
-      const restDistance = Math.max(1, Math.hypot(
+      const anchorDistance = Math.max(1, Math.hypot(
         nodeA.anchorX - nodeB.anchorX,
         nodeA.anchorY - nodeB.anchorY,
         nodeA.anchorZ - nodeB.anchorZ
       ));
+      const restDistance = this.normalizedDiagramType() === 'force'
+        ? Math.max(30, Number(this.config.diagram.force.linkDistance ?? 170))
+        : anchorDistance;
       const existing = pairs.get(key);
       if (!existing || !virtual || existing.strength < strength) {
         pairs.set(key, {
@@ -423,7 +632,8 @@ export class Graph3DEngine {
       addPair(link.sourceNode, link.targetNode, Number(this.config.physics.linkStrength), false);
     }
 
-    if ((this.config.layout.type === 'grid' ? 'hex' : this.config.layout.type) === 'hex') {
+    if (this.normalizedDiagramType() === 'network'
+      && (this.config.layout.type === 'grid' ? 'hex' : this.config.layout.type) === 'hex') {
       const gap = Number(this.config.layout.hex.gap);
       const neighborDistance = gap * SQRT_3 * 1.08;
       for (let i = 0; i < this.nodes.length; i += 1) {
@@ -486,7 +696,7 @@ export class Graph3DEngine {
 
     this.canvas.addEventListener('pointerdown', (event) => {
       const rect = this.canvas.getBoundingClientRect();
-      this.updateHover(event.clientX - rect.left, event.clientY - rect.top);
+      this.updateHover(event.clientX - rect.left, event.clientY - rect.top, true);
       this.pointer.dragging = true;
       this.pointer.id = event.pointerId;
       this.pointer.x = event.clientX;
@@ -494,14 +704,25 @@ export class Graph3DEngine {
       this.pointer.previousX = event.clientX;
       this.pointer.previousY = event.clientY;
       this.pointer.lastTime = event.timeStamp || performance.now();
+      const canDragChartPoint = this.normalizedDiagramType() === 'radar'
+        && this.hoveredChartItem
+        && !this.editingLocked;
       const canDragNode = this.hoveredNode
         && !this.editingLocked
         && this.config.interaction.nodeDraggingEnabled !== false;
       const canMoveCamera = !this.editingLocked || this.config.editor.allowCameraWhenLocked !== false;
-      this.pointer.mode = canDragNode ? 'node' : (canMoveCamera ? 'camera' : null);
+      this.pointer.mode = canDragChartPoint
+        ? 'radar-point'
+        : (canDragNode ? 'node' : (canMoveCamera ? 'camera' : null));
       this.draggedNode = this.pointer.mode === 'node' ? this.hoveredNode : null;
+      this.dragDataDirty = false;
       if (this.hoveredLink && !this.hoveredNode) {
-        this.dispatch('graph:linkactivate', { link: this.serializeLink(this.hoveredLink) });
+        const rect = this.canvas.getBoundingClientRect();
+        this.dispatch('graph:linkactivate', {
+          link: this.serializeLink(this.hoveredLink),
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        });
       }
       this.canvas.setPointerCapture?.(event.pointerId);
       this.canvas.style.cursor = 'grabbing';
@@ -517,16 +738,34 @@ export class Graph3DEngine {
       const hoverDy = event.clientY - this.pointer.previousY;
 
       if (this.pointer.dragging && this.pointer.id === event.pointerId) {
-        if (this.pointer.mode === 'node' && this.draggedNode) {
-          const world = this.screenDeltaToWorld(dx, dy, this.draggedNode);
-          const strength = Number(this.config.interaction.dragJellyStrength);
-          this.draggedNode.x0 += world.x * strength;
-          this.draggedNode.y0 += world.y * strength;
-          this.draggedNode.z0 += world.z * strength;
-          this.draggedNode.vx = world.x / elapsed * 0.15;
-          this.draggedNode.vy = world.y / elapsed * 0.15;
-          this.draggedNode.vz = world.z / elapsed * 0.15;
-          this.impulseNeighbors(this.draggedNode, world.x, world.y, world.z, 0.12);
+        if (this.pointer.mode === 'radar-point' && this.hoveredChartItem) {
+          const rect = this.canvas.getBoundingClientRect();
+          this.updateRadarValueFromScreen(
+            this.hoveredChartItem,
+            event.clientX - rect.left,
+            event.clientY - rect.top
+          );
+          this.renderOnce();
+        } else if (this.pointer.mode === 'node' && this.draggedNode) {
+          if (this.normalizedDiagramType() === 'bubble') {
+            const rect = this.canvas.getBoundingClientRect();
+            this.updateBubbleNodeFromScreen(
+              this.draggedNode,
+              event.clientX - rect.left,
+              event.clientY - rect.top
+            );
+            this.renderOnce();
+          } else {
+            const world = this.screenDeltaToWorld(dx, dy, this.draggedNode);
+            const strength = Number(this.config.interaction.dragJellyStrength);
+            this.draggedNode.x0 += world.x * strength;
+            this.draggedNode.y0 += world.y * strength;
+            this.draggedNode.z0 += world.z * strength;
+            this.draggedNode.vx = world.x / elapsed * 0.15;
+            this.draggedNode.vy = world.y / elapsed * 0.15;
+            this.draggedNode.vz = world.z / elapsed * 0.15;
+            this.impulseNeighbors(this.draggedNode, world.x, world.y, world.z, 0.12);
+          }
         } else {
           const sensitivity = Number(this.config.interaction.rotationSensitivity);
           this.camera.targetAngleY += dx * sensitivity;
@@ -552,7 +791,7 @@ export class Graph3DEngine {
 
       const rect = this.canvas.getBoundingClientRect();
       this.updateHover(event.clientX - rect.left, event.clientY - rect.top);
-      if (this.hoveredNode && this.normalizedLayoutType() === 'hex' && Math.hypot(hoverDx, hoverDy) > 0.5) {
+      if (this.hoveredNode && this.normalizedDiagramType() === 'network' && this.normalizedLayoutType() === 'hex' && Math.hypot(hoverDx, hoverDy) > 0.5) {
         const world = this.screenDeltaToWorld(hoverDx, hoverDy, this.hoveredNode);
         const strength = Number(this.config.interaction.hoverJellyStrength);
         this.hoveredNode.vx += world.x * strength;
@@ -569,10 +808,28 @@ export class Graph3DEngine {
 
     const releasePointer = (event) => {
       if (this.pointer.id !== event.pointerId) return;
+      const releasedMode = this.pointer.mode;
+      const releasedNode = this.draggedNode;
       this.pointer.dragging = false;
       this.pointer.id = null;
       this.pointer.mode = null;
       this.draggedNode = null;
+      if (releasedMode === 'node' && releasedNode && this.normalizedDiagramType() !== 'bubble') {
+        const source = this.data.nodes.find((item) => item.id === releasedNode.id);
+        if (source) {
+          source.manualPosition = {
+            x: Number(releasedNode.x0.toFixed(4)),
+            y: Number(releasedNode.y0.toFixed(4)),
+            z: Number(releasedNode.z0.toFixed(4))
+          };
+          this.dragDataDirty = true;
+        }
+      }
+      if (this.dragDataDirty) {
+        this.dragDataDirty = false;
+        this.diagramDataCache.set(this.normalizedDiagramType(), cloneValue(this.data));
+        this.dispatch('graph:datachange', this.exportData());
+      }
       this.canvas.releasePointerCapture?.(event.pointerId);
       this.canvas.style.cursor = (this.hoveredNode || this.hoveredLink) ? 'pointer' : 'grab';
     };
@@ -584,9 +841,11 @@ export class Graph3DEngine {
       if (!this.pointer.dragging) {
         this.hoveredNode = null;
         this.hoveredLink = null;
+        this.hoveredChartItem = null;
         this.lastHoverSignature = '';
-    this.lastChangeTransient = false;
-        this.dispatch('graph:hoverchange', { node: null, link: null, x: null, y: null });
+        this.lastChangeTransient = false;
+        this.dispatch('graph:hoverchange', { node: null, link: null, chartItem: null, x: null, y: null });
+        this.dispatch('graph:charthoverchange', { item: null, x: null, y: null });
         this.canvas.style.cursor = 'grab';
         if (this.paused) this.renderOnce();
       }
@@ -628,17 +887,19 @@ export class Graph3DEngine {
     }, { signal });
   }
 
+  normalizedDiagramType() {
+    return normalizeDiagramType(this.config.diagram?.type);
+  }
+
   normalizedLayoutType() {
     return this.config.layout.type === 'grid' ? 'hex' : this.config.layout.type;
   }
 
   screenDeltaToWorld(dx, dy, node) {
     const scale = Math.max(0.08, node.scale * this.camera.zoom);
-    return inverseRotateVector(
-      { x: dx / scale, y: dy / scale, z: 0 },
-      this.camera.angleX,
-      this.camera.angleY
-    );
+    const vector = { x: dx / scale, y: dy / scale, z: 0 };
+    if (!['network', 'force', 'mindmap'].includes(this.normalizedDiagramType())) return vector;
+    return inverseRotateVector(vector, this.camera.angleX, this.camera.angleY);
   }
 
   /**
@@ -687,11 +948,42 @@ export class Graph3DEngine {
     return this;
   }
 
-  updateHover(x, y) {
+  updateHover(x, y, force = false) {
+    const now = performance.now();
+    const throttle = Math.max(0, Number(this.config.performance?.hoverThrottleMs ?? 24));
+    if (!force && now - this.lastHoverCheckAt < throttle) return;
+    this.lastHoverCheckAt = now;
     const previousNodeId = this.hoveredNode?.id ?? null;
     const previousLinkId = this.hoveredLink?.id ?? null;
+    const previousChartKey = this.hoveredChartItem
+      ? `${this.hoveredChartItem.seriesIndex}:${this.hoveredChartItem.metricIndex}`
+      : null;
     this.hoveredNode = null;
     this.hoveredLink = null;
+    this.hoveredChartItem = null;
+
+    if (this.normalizedDiagramType() === 'radar') {
+      let best = null;
+      let bestDistance = Infinity;
+      for (const region of this.chartRegions) {
+        const distance = Math.hypot(x - region.x, y - region.y);
+        if (distance <= region.radius && distance < bestDistance) {
+          best = region;
+          bestDistance = distance;
+        }
+      }
+      this.hoveredChartItem = best;
+      const nextChartKey = best ? `${best.seriesIndex}:${best.metricIndex}` : null;
+      if (nextChartKey !== previousChartKey) {
+        this.dispatch('graph:charthoverchange', {
+          item: best ? this.serializeChartItem(best) : null,
+          x,
+          y
+        });
+      }
+      if (!this.pointer.dragging) this.canvas.style.cursor = best ? 'pointer' : 'grab';
+      return;
+    }
 
     for (let index = this.depthSortedNodes.length - 1; index >= 0; index -= 1) {
       const node = this.depthSortedNodes[index];
@@ -700,7 +992,11 @@ export class Graph3DEngine {
         8,
         node.originalSize * node.scale * this.camera.zoom * Number(this.config.interaction.hoverRadiusFactor)
       );
-      if (Math.hypot(x - node.sx, y - node.sy) <= radius) {
+      const bounds = node.renderBounds;
+      const insideBounds = bounds
+        && x >= bounds.x - 6 && x <= bounds.x + bounds.width + 6
+        && y >= bounds.y - 6 && y <= bounds.y + bounds.height + 6;
+      if (insideBounds || Math.hypot(x - node.sx, y - node.sy) <= radius) {
         this.hoveredNode = node;
         break;
       }
@@ -721,6 +1017,7 @@ export class Graph3DEngine {
       this.dispatch('graph:hoverchange', {
         node: this.hoveredNode ? this.serializeNode(this.hoveredNode) : null,
         link: this.hoveredLink ? this.serializeLink(this.hoveredLink) : null,
+        chartItem: null,
         x,
         y
       });
@@ -734,10 +1031,13 @@ export class Graph3DEngine {
     if (this.destroyed) return;
     const rect = this.canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
+    const previousWidth = this.viewport.width;
+    const previousHeight = this.viewport.height;
     const dpr = Math.min(window.devicePixelRatio || 1, Number(this.config.performance.maxDevicePixelRatio));
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.backgroundCache.dirty = true;
     this.viewport = {
       width: rect.width,
       height: rect.height,
@@ -745,7 +1045,10 @@ export class Graph3DEngine {
       centerY: rect.height / 2,
       dpr
     };
-    this.renderOnce();
+    const responsiveType = ['sankey', 'bubble'].includes(this.normalizedDiagramType());
+    const materiallyChanged = Math.abs(previousWidth - rect.width) > 8 || Math.abs(previousHeight - rect.height) > 8;
+    if (responsiveType && materiallyChanged && this.data.nodes.length) this.rebuildScene(true);
+    else this.renderOnce();
   }
 
   start() {
@@ -792,11 +1095,18 @@ export class Graph3DEngine {
 
   frame(timestamp) {
     if (this.destroyed || this.paused) return;
-    const deltaSeconds = clamp((timestamp - this.lastFrameTime) / 1000, 0, 0.04);
+    const targetFps = clamp(Number(this.config.performance?.targetFps ?? 60), 20, 120);
+    const minFrameInterval = 1000 / targetFps;
+    if (this.lastRenderedAt && timestamp - this.lastRenderedAt < minFrameInterval * 0.92) {
+      this.frameId = requestAnimationFrame((time) => this.frame(time));
+      return;
+    }
+    const deltaSeconds = clamp((timestamp - this.lastFrameTime) / 1000, 0, 0.05);
     this.lastFrameTime = timestamp;
+    this.lastRenderedAt = timestamp;
     const reduceMotion = this.config.animation.respectReducedMotion && this.prefersReducedMotion;
     this.update(deltaSeconds, reduceMotion);
-    this.renderOnce();
+    this.renderOnce(timestamp);
     this.frameId = requestAnimationFrame((time) => this.frame(time));
   }
 
@@ -855,14 +1165,18 @@ export class Graph3DEngine {
 
   updatePhysics(deltaSeconds) {
     if (!this.nodes.length) return;
+    const diagramType = this.normalizedDiagramType();
+    if (['radar', 'bubble', 'sankey', 'tree', 'flowchart', 'fishbone', 'decision'].includes(diagramType)) return;
     const steps = clamp(Math.round(Number(this.config.physics.substeps)), 1, 4);
     const step = deltaSeconds / steps;
-    const isHex = this.normalizedLayoutType() === 'hex';
+    const isHex = diagramType === 'network' && this.normalizedLayoutType() === 'hex';
+    const isForce = diagramType === 'force';
 
     for (let iteration = 0; iteration < steps; iteration += 1) {
       for (const node of this.nodes) {
         const transition = Number(this.config.layout.transition) || 1;
-        const anchorStrength = Number(this.config.physics.anchorStrength) * transition / 4.2;
+        const anchorFactor = isForce ? Number(this.config.diagram.force.anchorFactor ?? 0.12) : 1;
+        const anchorStrength = Number(this.config.physics.anchorStrength) * transition / 4.2 * anchorFactor;
         node.fx = (node.anchorX - node.x0) * anchorStrength * (isHex ? 1 : 1.18);
         node.fy = (node.anchorY - node.y0) * anchorStrength * (isHex ? 1 : 1.18);
         node.fz = (node.anchorZ - node.z0) * anchorStrength * (isHex ? 0.75 : 1.05);
@@ -886,33 +1200,20 @@ export class Graph3DEngine {
         pair.nodeB.fz -= fz;
       }
 
-      for (let i = 0; i < this.nodes.length; i += 1) {
-        for (let j = i + 1; j < this.nodes.length; j += 1) {
-          const nodeA = this.nodes[i];
-          const nodeB = this.nodes[j];
-          let dx = nodeB.x0 - nodeA.x0;
-          let dy = nodeB.y0 - nodeA.y0;
-          let dz = nodeB.z0 - nodeA.z0;
-          let distance = Math.hypot(dx, dy, dz);
-          if (distance < 0.001) {
-            dx = 0.001;
-            dy = 0;
-            dz = 0;
-            distance = 0.001;
+      const threshold = Math.max(8, Number(this.config.performance?.spatialGridThreshold ?? 28));
+      if (this.nodes.length >= threshold) {
+        const cellSize = Math.max(
+          40,
+          Number(this.config.performance?.spatialGridCellSize ?? 150),
+          isHex ? Number(this.config.layout.hex.gap) : 0
+        );
+        const grid = createSpatialGrid(this.nodes, cellSize);
+        forEachNearbyPair(grid, (nodeA, nodeB) => this.applyRepulsionPair(nodeA, nodeB, isHex, isForce));
+      } else {
+        for (let i = 0; i < this.nodes.length; i += 1) {
+          for (let j = i + 1; j < this.nodes.length; j += 1) {
+            this.applyRepulsionPair(this.nodes[i], this.nodes[j], isHex, isForce);
           }
-          const minimum = (nodeA.originalSize + nodeB.originalSize) * Number(this.config.physics.collisionPadding);
-          const range = Math.max(minimum, isHex ? Number(this.config.layout.hex.gap) * 0.72 : minimum * 1.35);
-          if (distance >= range) continue;
-          const force = Number(this.config.physics.repulsionStrength) * (1 - distance / range);
-          const fx = (dx / distance) * force;
-          const fy = (dy / distance) * force;
-          const fz = (dz / distance) * force;
-          nodeA.fx -= fx;
-          nodeA.fy -= fy;
-          nodeA.fz -= fz;
-          nodeB.fx += fx;
-          nodeB.fy += fy;
-          nodeB.fz += fz;
         }
       }
 
@@ -942,12 +1243,62 @@ export class Graph3DEngine {
     }
   }
 
+
+  applyRepulsionPair(nodeA, nodeB, isHex, isForce) {
+    let dx = nodeB.x0 - nodeA.x0;
+    let dy = nodeB.y0 - nodeA.y0;
+    let dz = nodeB.z0 - nodeA.z0;
+    let distance = Math.hypot(dx, dy, dz);
+    if (distance < 0.001) {
+      dx = 0.001;
+      dy = 0;
+      dz = 0;
+      distance = 0.001;
+    }
+    const minimum = (nodeA.originalSize + nodeB.originalSize) * Number(this.config.physics.collisionPadding);
+    const range = Math.max(minimum, isHex ? Number(this.config.layout.hex.gap) * 0.72 : minimum * 1.35);
+    if (distance >= range) return;
+    const repulsionFactor = isForce ? Number(this.config.diagram.force.repulsionFactor ?? 2.2) : 1;
+    const force = Number(this.config.physics.repulsionStrength) * repulsionFactor * (1 - distance / range);
+    const fx = (dx / distance) * force;
+    const fy = (dy / distance) * force;
+    const fz = (dz / distance) * force;
+    nodeA.fx -= fx;
+    nodeA.fy -= fy;
+    nodeA.fz -= fz;
+    nodeB.fx += fx;
+    nodeB.fy += fy;
+    nodeB.fz += fz;
+  }
+
   updateProjection() {
+    const diagramType = this.normalizedDiagramType();
+    if (diagramType === 'bubble') {
+      const plot = this.bubblePlotArea();
+      const bounds = this.layoutMeta.bounds ?? { xMin: 0, xMax: 100, yMin: 0, yMax: 100 };
+      const xSpan = Math.max(1e-6, Number(bounds.xMax) - Number(bounds.xMin));
+      const ySpan = Math.max(1e-6, Number(bounds.yMax) - Number(bounds.yMin));
+      for (const node of this.nodes) {
+        const rawX = Number(node.dataX ?? node.x ?? node.valueX ?? 0);
+        const rawY = Number(node.dataY ?? node.y ?? node.valueY ?? 0);
+        node.x = rawX;
+        node.y = rawY;
+        node.z = 0;
+        node.visible = true;
+        node.sx = plot.left + (rawX - bounds.xMin) / xSpan * plot.width;
+        node.sy = plot.bottom - (rawY - bounds.yMin) / ySpan * plot.height;
+        node.scale = 1;
+      }
+      this.depthSortedNodes.sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0));
+      return;
+    }
+
     for (const node of this.nodes) {
+      const use3D = ['network', 'force', 'mindmap'].includes(diagramType);
       const rotated = rotatePoint3D(
         { x: node.x0, y: node.y0, z: node.z0 },
-        this.camera.angleX,
-        this.camera.angleY
+        use3D ? this.camera.angleX : 0,
+        use3D ? this.camera.angleY : 0
       );
       const projected = projectPoint3D(rotated, {
         focalLength: Number(this.config.camera.focalLength),
@@ -965,7 +1316,55 @@ export class Graph3DEngine {
     this.depthSortedNodes.sort((a, b) => b.z - a.z);
   }
 
-  renderOnce() {
+  bubblePlotArea() {
+    const margin = Math.max(46, Number(this.config.diagram?.bubble?.margin ?? 68));
+    return {
+      left: margin,
+      right: this.viewport.width - margin,
+      top: margin,
+      bottom: this.viewport.height - margin,
+      width: Math.max(1, this.viewport.width - margin * 2),
+      height: Math.max(1, this.viewport.height - margin * 2)
+    };
+  }
+
+  updateBubbleNodeFromScreen(node, screenX, screenY) {
+    const plot = this.bubblePlotArea();
+    const bounds = this.layoutMeta.bounds ?? { xMin: 0, xMax: 100, yMin: 0, yMax: 100 };
+    const nx = clamp((screenX - plot.left) / plot.width, 0, 1);
+    const ny = clamp((plot.bottom - screenY) / plot.height, 0, 1);
+    const x = Number(bounds.xMin) + nx * (Number(bounds.xMax) - Number(bounds.xMin));
+    const y = Number(bounds.yMin) + ny * (Number(bounds.yMax) - Number(bounds.yMin));
+    node.dataX = x;
+    node.dataY = y;
+    node.x = x;
+    node.y = y;
+    const source = this.data.nodes.find((item) => item.id === node.id);
+    if (source) {
+      source.x = Number(x.toFixed(4));
+      source.y = Number(y.toFixed(4));
+    }
+    this.dragDataDirty = true;
+    this.diagramDataCache.set('bubble', cloneValue(this.data));
+  }
+
+  updateRadarValueFromScreen(item, screenX, screenY) {
+    const value = radarValueFromPointer(item, screenX, screenY);
+    if (value == null) return;
+    const series = this.data.chart?.series?.[item.seriesIndex];
+    const metric = this.data.chart?.metrics?.[item.metricIndex];
+    if (!series || metric == null) return;
+    if (Array.isArray(series.values)) series.values[item.metricIndex] = Number(value.toFixed(2));
+    else {
+      const metricId = typeof metric === 'string' ? metric : String(metric.id ?? metric.name ?? item.metricIndex);
+      if (!series.values || typeof series.values !== 'object') series.values = {};
+      series.values[metricId] = Number(value.toFixed(2));
+    }
+    this.dragDataDirty = true;
+    this.diagramDataCache.set('radar', cloneValue(this.data));
+  }
+
+  renderOnce(now = performance.now()) {
     if (this.destroyed || !this.ctx) return;
     const { width, height } = this.viewport;
     if (!width || !height) return;
@@ -975,23 +1374,60 @@ export class Graph3DEngine {
     this.ctx.clearRect(0, 0, width, height);
     this.drawBackground();
     this.drawParticles();
+    if (this.normalizedDiagramType() === 'radar') {
+      this.chartRegions = drawRadarDiagram(
+        this.ctx, this.viewport, this.data.chart, this.config, this.hoveredChartItem
+      );
+      this.drawTransitionOverlay(now);
+      this.ctx.restore();
+      return;
+    }
+    this.chartRegions = [];
     this.updateProjection();
+    if (this.normalizedDiagramType() === 'bubble') {
+      drawBubbleAxes(this.ctx, this.viewport, this.config, this.layoutMeta.bounds);
+    }
     this.drawLinks();
     this.drawNodes();
     this.drawTooltip();
+    this.drawTransitionOverlay(now);
     this.ctx.restore();
   }
 
   drawBackground() {
     const { ctx, viewport, config } = this;
+    const cacheEnabled = config.performance?.backgroundCache !== false && canCreateCanvasSurface();
+    if (!cacheEnabled) {
+      this.paintBackground(ctx, viewport);
+      return;
+    }
+
+    const key = JSON.stringify({
+      width: Math.round(viewport.width), height: Math.round(viewport.height), dpr: viewport.dpr,
+      diagram: this.normalizedDiagramType(), layout: this.normalizedLayoutType(),
+      center: config.colors.backgroundCenter, edge: config.colors.backgroundEdge,
+      grid: config.colors.grid, background: config.background
+    });
+    if (!this.backgroundCache.canvas || this.backgroundCache.key !== key || this.backgroundCache.dirty) {
+      const canvas = this.backgroundCache.canvas ?? createCanvasSurface();
+      if (!canvas) { this.paintBackground(ctx, viewport); return; }
+      canvas.width = Math.max(1, Math.round(viewport.width * viewport.dpr));
+      canvas.height = Math.max(1, Math.round(viewport.height * viewport.dpr));
+      const backgroundContext = canvas.getContext('2d');
+      backgroundContext.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
+      backgroundContext.clearRect(0, 0, viewport.width, viewport.height);
+      this.paintBackground(backgroundContext, viewport);
+      this.backgroundCache = { canvas, key, dirty: false };
+    }
+    ctx.drawImage(this.backgroundCache.canvas, 0, 0, viewport.width, viewport.height);
+  }
+
+  paintBackground(ctx, viewport) {
+    const config = this.config;
     const radius = Math.max(viewport.width, viewport.height) * 0.82;
     const gradient = ctx.createRadialGradient(
-      viewport.centerX,
-      viewport.centerY,
-      0,
-      viewport.centerX,
-      viewport.centerY,
-      radius
+      viewport.centerX, viewport.centerY, 0,
+      viewport.centerX, viewport.centerY, radius
     );
     gradient.addColorStop(0, config.colors.backgroundCenter);
     gradient.addColorStop(1, config.colors.backgroundEdge);
@@ -1009,7 +1445,7 @@ export class Graph3DEngine {
     for (let y = 0; y <= viewport.height + spacing; y += spacing, row += 1) {
       let column = 0;
       for (let x = 0; x <= viewport.width + spacing; x += spacing, column += 1) {
-        const offsetX = this.normalizedLayoutType() === 'hex' && row % 2 ? spacing / 2 : 0;
+        const offsetX = this.normalizedDiagramType() === 'network' && this.normalizedLayoutType() === 'hex' && row % 2 ? spacing / 2 : 0;
         const accent = row % accentEvery === 0 && column % accentEvery === 0;
         const dotSize = accent ? Number(config.background.accentSize) : baseSize;
         ctx.beginPath();
@@ -1027,7 +1463,15 @@ export class Graph3DEngine {
     ctx.fillStyle = this.config.colors.particle;
     ctx.shadowColor = this.config.colors.particle;
     ctx.shadowBlur = 4;
-    for (const particle of this.particles) {
+    const adaptive = this.config.performance?.adaptiveQuality !== false;
+    const lowFps = Number(this.frameStats.fps) > 0
+      && Number(this.frameStats.fps) < Number(this.config.performance?.lowFpsThreshold ?? 38);
+    const factor = adaptive && lowFps
+      ? clamp(Number(this.config.performance?.lowFpsParticleFactor ?? 0.55), 0.1, 1)
+      : 1;
+    const step = Math.max(1, Math.round(1 / factor));
+    for (let index = 0; index < this.particles.length; index += step) {
+      const particle = this.particles[index];
       const denominator = Number(this.config.camera.focalLength) + particle.z;
       if (denominator <= Number(this.config.camera.nearClip)) continue;
       const scale = Number(this.config.camera.focalLength) / denominator;
@@ -1052,8 +1496,91 @@ export class Graph3DEngine {
   drawLinks() {
     const { ctx, config } = this;
     const activeIds = this.getActiveIds();
+    const diagramType = this.normalizedDiagramType();
 
-    if (this.normalizedLayoutType() === 'hex') {
+    if (diagramType === 'sankey') {
+      drawSankeyLinks(ctx, this.links, config, this.hoveredLink);
+      return;
+    }
+
+    if (diagramType === 'fishbone') {
+      drawFishboneSpine(ctx, this.nodes, config, {
+        flowTime: this.flowTime,
+        pulse: {
+          enabled: Boolean(config.networkPulse.enabled),
+          speed: Number(config.networkPulse.bpm) / 60 * 0.42,
+          color: config.networkPulse.color,
+          width: Math.max(2, Number(config.networkPulse.markerSize)),
+          trailLength: 0.13,
+          opacity: 0.9,
+          glowBlur: config.networkPulse.glowEnabled ? Number(config.networkPulse.glowBlur) : 0
+        }
+      });
+    }
+
+    if (['flowchart', 'decision', 'tree', 'mindmap', 'fishbone'].includes(diagramType)) {
+      const mode = ['mindmap', 'tree', 'fishbone'].includes(diagramType)
+        ? 'curve'
+        : (['flowchart', 'decision'].includes(diagramType) ? 'smooth-orthogonal' : 'straight');
+      const diagramOptions = config.diagram?.[diagramType] ?? {};
+      const arrow = Boolean(config.links.showArrows && diagramOptions.showArrows);
+      const flow = config.links.flow ?? {};
+      this.links.forEach((link, linkIndex) => {
+        if (!link.sourceNode?.visible || !link.targetNode?.visible) return;
+        const active = !activeIds || activeIds.has(link.source) || activeIds.has(link.target);
+        const pulseSource = link.pulseSourceNode ?? link.sourceNode;
+        const pulseTarget = link.pulseTargetNode ?? link.targetNode;
+        const heart = linkHeartWave(
+          this.flowTime,
+          pulseSource.level ?? 0,
+          pulseTarget.level ?? 1,
+          config.networkPulse
+        );
+        const baseWidth = Math.max(
+          1,
+          Number(link.width) * ((link.sourceNode.scale + link.targetNode.scale) / 2)
+        );
+        const width = baseWidth * (1 + heart.intensity * Number(config.networkPulse.linkWidthBoost));
+        const route = drawStructuredConnector(ctx, link.sourceNode, link.targetNode, {
+          color: link === this.hoveredLink ? config.networkPulse.color : link.color,
+          width,
+          opacity: active ? Number(config.links.opacity) : Number(config.links.inactiveOpacity),
+          mode,
+          arrow,
+          smoothness: Number(config.links.smoothness ?? 0.82)
+        });
+        link.renderRoute = route;
+
+        if (config.networkPulse.enabled && heart.intensity > 0.015) {
+          drawRouteStreak(ctx, route, heart.progress, {
+            color: config.networkPulse.style === 'organic' ? link.color : config.networkPulse.color,
+            width: Math.max(1.1, Number(config.networkPulse.markerSize) * 0.72),
+            opacity: clamp(0.32 + heart.intensity * 0.68, 0, 1),
+            trailLength: 0.12,
+            glowBlur: config.networkPulse.glowEnabled ? Number(config.networkPulse.glowBlur) : 0
+          });
+        }
+
+        if (flow.enabled && active) {
+          const count = clamp(Math.round(Number(flow.count)), 1, 16);
+          for (let index = 0; index < count; index += 1) {
+            const offset = index / count + linkIndex * 0.137;
+            const progress = (this.flowTime * Number(flow.speed) + offset) % 1;
+            drawRouteStreak(ctx, route, progress, {
+              color: link.flowColor ?? link.color,
+              width: Math.max(0.75, Number(flow.size)),
+              opacity: Number(flow.opacity),
+              trailLength: Number(flow.trailLength ?? 0.22),
+              segments: Number(flow.trailSegments ?? 18),
+              glowBlur: Number(flow.glowBlur ?? 0)
+            });
+          }
+        }
+      });
+      return;
+    }
+
+    if (diagramType === 'network' && this.normalizedLayoutType() === 'hex') {
       ctx.save();
       ctx.strokeStyle = config.colors.grid;
       ctx.globalAlpha = 0.42;
@@ -1105,9 +1632,11 @@ export class Graph3DEngine {
           targetRadius,
           endpointRatio: taper.enabled === false ? 1 : taper.endpointRatio,
           minEndpointWidth: taper.minEndpointWidth,
-          insetRatio: taper.insetRatio
+          insetRatio: taper.insetRatio,
+          curvature: Number(config.links.smoothness ?? 0.82) * 0.075 * (linkIndex % 2 === 0 ? 1 : -1)
         }
       );
+      if (geometry) link.renderRoute = geometry.route;
       if (!geometry) return;
 
       ctx.save();
@@ -1162,7 +1691,9 @@ export class Graph3DEngine {
             headColor: config.colors.nodeForeground,
             tailColor: 'rgba(255,255,255,0)',
             width: Math.max(0.65, Number(flow.size) * depthScale * 0.55),
-            trailLength: Number(flow.trailLength ?? 0.085),
+            trailLength: Number(flow.trailLength ?? 0.22),
+            segments: Number(flow.trailSegments ?? 18),
+            glowBlur: Number(flow.glowBlur ?? 0),
             headDot: false
           });
         }
@@ -1174,9 +1705,61 @@ export class Graph3DEngine {
   drawNodes() {
     const { ctx, config } = this;
     const activeIds = this.getActiveIds();
+    const diagramType = this.normalizedDiagramType();
+
     for (const node of this.depthSortedNodes) {
       if (!node.visible) continue;
       const active = !activeIds || activeIds.has(node.id);
+
+      if (diagramType === 'sankey') {
+        drawSankeyNode(ctx, node, config, active, node === this.hoveredNode);
+        this.drawSankeyNodeLabel(node, active);
+        continue;
+      }
+
+      if (['flowchart', 'decision'].includes(diagramType)) {
+        const radius = Math.max(12, node.originalSize * node.scale * this.camera.zoom);
+        const shape = inferNodeShape(node, diagramType);
+        const width = Math.max(radius * 2.2, Number(node.flowWidth || 0) * node.scale * this.camera.zoom);
+        const height = Math.max(radius * 2, Number(node.flowHeight || 0) * node.scale * this.camera.zoom);
+        const branchHeart = nodeHeartWave(this.flowTime, node.level ?? 0, config.networkPulse);
+        ctx.save();
+        ctx.globalAlpha = (active ? 1 : 0.24) * node.opacity;
+        ctx.fillStyle = node.color;
+        ctx.strokeStyle = node === this.hoveredNode ? config.networkPulse.color : config.colors.nodeStroke;
+        ctx.lineWidth = node === this.hoveredNode ? 2.4 : 1.2;
+        const bounds = traceNodeShape(ctx, shape, node.sx, node.sy, radius, { width, height });
+        ctx.fill();
+        if (config.networkPulse.enabled && config.networkPulse.fillEnabled && branchHeart > 0.01) {
+          ctx.globalAlpha = (active ? 1 : 0.24) * node.opacity * branchHeart * Number(config.networkPulse.fillStrength ?? 0.28);
+          ctx.fillStyle = config.networkPulse.color;
+          ctx.fill();
+        }
+        ctx.globalAlpha = (active ? 1 : 0.24) * node.opacity;
+        ctx.stroke();
+        ctx.restore();
+        node.renderBounds = bounds;
+        this.drawCenteredNodeLabel(node, bounds, active, config.colors.blockText, shape);
+        continue;
+      }
+
+      if (diagramType === 'bubble') {
+        const radius = Math.max(4, node.originalSize * node.scale * this.camera.zoom);
+        ctx.save();
+        ctx.globalAlpha = (active ? 0.86 : 0.22) * node.opacity;
+        ctx.fillStyle = node.color;
+        ctx.strokeStyle = node === this.hoveredNode ? config.networkPulse.color : config.colors.nodeStroke;
+        ctx.lineWidth = node === this.hoveredNode ? 2.5 : 1;
+        ctx.beginPath();
+        ctx.arc(node.sx, node.sy, radius, 0, TWO_PI);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        node.renderBounds = { x: node.sx - radius, y: node.sy - radius, width: radius * 2, height: radius * 2 };
+        this.drawNodeLabel(node, radius, active, true);
+        continue;
+      }
+
       const basePulse = 1 + node.pulseAmplitude * Math.sin(this.pulseTime * TWO_PI + node.level * 0.45);
       const corePulseConfig = config.node.corePulse;
       const coreWave = node.type === 'core' && corePulseConfig.enabled
@@ -1199,7 +1782,7 @@ export class Graph3DEngine {
       );
 
       ctx.save();
-      ctx.globalAlpha = active ? 1 : 0.2;
+      ctx.globalAlpha = (active ? 1 : 0.2) * node.opacity;
       ctx.fillStyle = node.color;
       ctx.strokeStyle = branchHeart > 0.08 && config.networkPulse.style !== 'organic'
         ? config.networkPulse.color
@@ -1224,8 +1807,16 @@ export class Graph3DEngine {
         ctx.arc(node.sx, node.sy, radius, 0, TWO_PI);
       }
       ctx.fill();
+      if (config.networkPulse.enabled && config.networkPulse.fillEnabled && (branchHeart > 0.01 || coreWave > 0.01)) {
+        ctx.globalAlpha = (active ? 1 : 0.2) * node.opacity
+          * Math.max(branchHeart, coreWave) * Number(config.networkPulse.fillStrength ?? 0.28);
+        ctx.fillStyle = config.networkPulse.color;
+        ctx.fill();
+      }
+      ctx.globalAlpha = (active ? 1 : 0.2) * node.opacity;
       ctx.stroke();
       ctx.restore();
+      node.renderBounds = { x: node.sx - radius, y: node.sy - radius, width: radius * 2, height: radius * 2 };
 
       if (node === this.hoveredNode || node === this.draggedNode) {
         ctx.save();
@@ -1243,10 +1834,67 @@ export class Graph3DEngine {
     ctx.globalAlpha = 1;
   }
 
-  drawNodeLabel(node, radius, active) {
+  drawCenteredNodeLabel(node, bounds, active, color = null, shape = 'rectangle') {
+    if (!node.name) return;
+    const { ctx, config } = this;
+    const maxFontSize = Math.max(10, Number(config.node.labels.fontSize ?? 14));
+    const widthFactor = shape === 'diamond' ? 0.54 : (shape === 'circle' ? 0.56 : (shape === 'parallelogram' ? 0.72 : 1));
+    const heightFactor = shape === 'diamond' ? 0.50 : (shape === 'circle' ? 0.56 : 1);
+    const innerWidth = Math.max(42, bounds.width * widthFactor - 26);
+    const innerHeight = Math.max(26, bounds.height * heightFactor - 18);
+    ctx.save();
+    // Fail-safe: подпись физически не может выйти за контур фигуры.
+    // Основной размер подбирается layout-ом, clip защищает от редких длинных
+    // слов и нестандартных пользовательских шрифтов.
+    traceNodeShape(ctx, shape, node.sx, node.sy, bounds.radius ?? Math.min(bounds.width, bounds.height) / 2, {
+      width: Math.max(2, bounds.width - 4),
+      height: Math.max(2, bounds.height - 4)
+    });
+    ctx.clip();
+    ctx.globalAlpha = (active ? 1 : 0.35) * node.opacity;
+    ctx.fillStyle = color ?? config.colors.labelText;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let fontSize = maxFontSize;
+    let lines = [];
+    while (fontSize >= 5) {
+      ctx.font = `700 ${fontSize}px ${config.typography.family}`;
+      lines = wrapText(ctx, node.name, innerWidth);
+      const lineHeight = fontSize + 3;
+      if (lines.length * lineHeight <= innerHeight) break;
+      fontSize -= 1;
+    }
+    const lineHeight = fontSize + 3;
+    const startY = node.sy - (lines.length - 1) * lineHeight / 2;
+    lines.forEach((line, index) => ctx.fillText(line, node.sx, startY + index * lineHeight));
+    ctx.restore();
+  }
+
+  drawSankeyNodeLabel(node, active) {
+    if (!node.name) return;
+    const { ctx, config } = this;
+    const nodeWidth = Number(config.diagram?.sankey?.nodeWidth ?? 38) * node.scale;
+    const labelGap = Math.max(6, Number(config.diagram?.sankey?.labelGap ?? 10));
+    const maxWidth = Math.max(48, Number(node.sankeyLabelMaxWidth ?? 96));
+    const fontSize = Math.max(7, Number(node.sankeyLabelFontSize ?? 11));
+    const lineHeight = Math.max(fontSize + 1, Number(node.sankeyLabelLineHeight ?? fontSize + 3));
+    ctx.save();
+    ctx.globalAlpha = (active ? 1 : 0.35) * node.opacity;
+    ctx.fillStyle = config.colors.labelText;
+    ctx.font = `700 ${fontSize}px ${config.typography.family}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const lines = wrapText(ctx, node.name, maxWidth);
+    const startY = node.sy - (lines.length - 1) * lineHeight / 2;
+    const x = node.sx + nodeWidth / 2 + labelGap;
+    lines.forEach((line, index) => ctx.fillText(line, x, startY + index * lineHeight, maxWidth));
+    ctx.restore();
+  }
+
+  drawNodeLabel(node, radius, active, force = false) {
     const labelConfig = this.config.node.labels ?? {};
     const mode = labelConfig.mode ?? 'core';
-    const shouldShow = mode === 'all'
+    const shouldShow = force || mode === 'all'
       || (mode === 'core' && node.type === 'core')
       || (labelConfig.showOnHover && node === this.hoveredNode);
     if (!shouldShow || !node.name) return;
@@ -1352,6 +2000,20 @@ export class Graph3DEngine {
     return cloneValue(plain);
   }
 
+  serializeChartItem(item) {
+    if (!item) return null;
+    return {
+      seriesIndex: item.seriesIndex,
+      metricIndex: item.metricIndex,
+      seriesId: item.series?.id ?? null,
+      seriesName: item.series?.name ?? '',
+      metricId: typeof item.metric === 'string' ? item.metric : item.metric?.id ?? null,
+      metricLabel: typeof item.metric === 'string' ? item.metric : item.metric?.label ?? item.metric?.name ?? '',
+      value: item.value,
+      color: item.color
+    };
+  }
+
   serializeLink(link) {
     if (!link) return null;
     return {
@@ -1361,6 +2023,7 @@ export class Graph3DEngine {
       label: link.label ?? '',
       color: link.color,
       width: link.width,
+      value: link.value ?? 1,
       flowColor: link.flowColor ?? null,
       description: link.description ?? ''
     };
@@ -1368,8 +2031,12 @@ export class Graph3DEngine {
 
   exportData() {
     return {
+      format: 'graph-studio/2',
+      diagramType: this.normalizedDiagramType(),
       nodes: cloneValue(this.data.nodes),
       links: cloneValue(this.data.links),
+      chart: cloneValue(this.data.chart ?? { metrics: [], series: [] }),
+      document: cloneValue(this.data.document ?? { title: '', subtitle: '', sections: [] }),
       config: cloneValue(this.config)
     };
   }
@@ -1384,6 +2051,10 @@ export class Graph3DEngine {
     this.destroyed = true;
     this.abortController.abort();
     this.resizeObserver.disconnect();
+    if (this.transitionFrameId != null) cancelAnimationFrame(this.transitionFrameId);
+    this.transitionFrameId = null;
+    this.diagramTransition = null;
+    this.backgroundCache = { canvas: null, key: '', dirty: true };
     this.nodes = [];
     this.links = [];
     this.springPairs = [];
@@ -1392,4 +2063,22 @@ export class Graph3DEngine {
     this.physicsAdjacency?.clear();
     this.particles = [];
   }
+}
+
+
+function canCreateCanvasSurface() {
+  return typeof globalThis.document?.createElement === 'function' || typeof globalThis.OffscreenCanvas === 'function';
+}
+
+function createCanvasSurface(width = 1, height = 1) {
+  if (typeof globalThis.document?.createElement === 'function') {
+    const canvas = globalThis.document.createElement('canvas');
+    canvas.width = Math.max(1, Number(width) || 1);
+    canvas.height = Math.max(1, Number(height) || 1);
+    return canvas;
+  }
+  if (typeof globalThis.OffscreenCanvas === 'function') {
+    return new globalThis.OffscreenCanvas(Math.max(1, Number(width) || 1), Math.max(1, Number(height) || 1));
+  }
+  return null;
 }

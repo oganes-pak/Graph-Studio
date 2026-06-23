@@ -1,10 +1,21 @@
 {
-  "version": "8.0.0",
+  "version": "graph-studio-tools/3",
   "tools": [
     {
       "name": "get_project",
-      "title": "Получить граф",
-      "description": "Возвращает текущие узлы, связи, настройки и состояние.",
+      "title": "Получить проект",
+      "description": "Возвращает тип диаграммы, данные, настройки и состояние.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_info_templates",
+      "title": "Получить шаблоны инфоблоков",
+      "description": "Возвращает каталог машинно-понятных типов информационных секций и примеры полей.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -14,11 +25,27 @@
     },
     {
       "name": "replace_graph",
-      "title": "Заменить граф",
-      "description": "Полностью заменяет узлы и связи.",
+      "title": "Заменить проект",
+      "description": "Мягко нормализует и полностью заменяет данные диаграммы.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "diagramType": {
+            "type": "string",
+            "enum": [
+              "info",
+              "fishbone",
+              "flowchart",
+              "tree",
+              "force",
+              "sankey",
+              "network",
+              "radar",
+              "bubble",
+              "mindmap",
+              "decision"
+            ]
+          },
           "nodes": {
             "type": "array",
             "items": {
@@ -30,11 +57,84 @@
             "items": {
               "type": "object"
             }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "chart": {
+            "type": "object"
+          },
+          "document": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_diagram_type",
+      "title": "Выбрать тип диаграммы",
+      "description": "Переключает тип диаграммы и интерпретирует текущие данные под выбранное представление.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "diagramType": {
+            "type": "string",
+            "enum": [
+              "info",
+              "fishbone",
+              "flowchart",
+              "tree",
+              "force",
+              "sankey",
+              "network",
+              "radar",
+              "bubble",
+              "mindmap",
+              "decision"
+            ]
           }
         },
         "required": [
-          "nodes",
-          "connections"
+          "diagramType"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_chart_data",
+      "title": "Задать данные диаграммы",
+      "description": "Заменяет chart.metrics и chart.series, используемые радаром.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "chart": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "chart"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_document_data",
+      "title": "Задать информационные блоки",
+      "description": "Заменяет документ информационной панели: секции, рейтинги, карточки и таблицы.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "document"
         ],
         "additionalProperties": false
       }
@@ -57,14 +157,10 @@
             "minLength": 1
           },
           "type": {
-            "type": "string",
-            "enum": [
-              "core",
-              "group",
-              "node",
-              "accent",
-              "default"
-            ]
+            "type": "string"
+          },
+          "shape": {
+            "type": "string"
           },
           "description": {
             "type": "string"
@@ -75,8 +171,27 @@
           },
           "size": {
             "type": "number",
-            "minimum": 3,
-            "maximum": 100
+            "minimum": 1,
+            "maximum": 200
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 1
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          },
+          "column": {
+            "type": "number",
+            "minimum": 0
           }
         },
         "required": [
@@ -134,7 +249,7 @@
     {
       "name": "add_connection",
       "title": "Добавить связь",
-      "description": "Соединяет два существующих узла. Между одной парой узлов допускается только одна связь независимо от направления.",
+      "description": "Соединяет два существующих узла. Между одной парой разрешена только одна связь.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -163,7 +278,11 @@
           "width": {
             "type": "number",
             "minimum": 0.5,
-            "maximum": 20
+            "maximum": 50
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
           }
         },
         "required": [
@@ -176,7 +295,7 @@
     {
       "name": "change_connection",
       "title": "Изменить связь",
-      "description": "Изменяет одну связь from → to.",
+      "description": "Изменяет одну связь между указанными узлами.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -208,7 +327,7 @@
     {
       "name": "delete_connection",
       "title": "Удалить связь",
-      "description": "Удаляет одну связь from → to.",
+      "description": "Удаляет одну связь между указанными узлами.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -234,8 +353,8 @@
     },
     {
       "name": "set_layout",
-      "title": "Выбрать раскладку",
-      "description": "Выбирает паутину или соты.",
+      "title": "Выбрать сетевую раскладку",
+      "description": "Для сетевой диаграммы выбирает паутину или соты.",
       "inputSchema": {
         "type": "object",
         "properties": {

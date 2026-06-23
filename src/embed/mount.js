@@ -9,6 +9,7 @@ export function mountGraphStudio(target, options = {}) {
   if (options.src) widget.setAttribute('src', options.src);
   if (options.height) widget.setAttribute('height', options.height);
   if (options.layout) widget.setAttribute('layout', options.layout);
+  if (options.diagramType) widget.setAttribute('diagram-type', options.diagramType);
   widget.setAttribute('mode', options.mode === 'admin' ? 'admin' : 'viewer');
   if (options.locked) widget.setAttribute('locked', '');
   if (options.controls) widget.setAttribute('controls', '');

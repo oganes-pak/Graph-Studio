@@ -1,0 +1,10 @@
+{
+  "version": "graph-studio-info/1",
+  "resource": "graphstudio://contracts/info-templates",
+  "description": "Каталог типов document.sections для информационных панелей Graph Studio v13.",
+  "types": [
+    "summary", "ranking", "kpi", "table", "timeline", "alerts", "checklist",
+    "comparison", "progress", "matrix", "steps", "pros_cons", "glossary",
+    "recommendations", "sources", "quote", "cards"
+  ]
+}

@@ -1,0 +1,44 @@
+Graph Studio v11 test report
+Date: 2026-06-23
+
+Project checks
+- Project files: 98
+- JavaScript/MJS files: 49
+- JSON manifests: 9
+- HTML IDs: 179
+- UI selectors: 149
+- Machine tools: 15
+
+Functional checks
+- Static project check: PASS
+- JavaScript/MJS syntax: PASS
+- Relative imports: PASS
+- JSON manifests: PASS
+- MCP syntax check: PASS
+- Ten diagram types: PASS
+- Ten rich demo templates: PASS
+- Duplicate links merged during import: PASS
+- Duplicate links blocked during manual editing: PASS
+- Automatic colors assigned to nodes without color: PASS
+- Explicit user colors preserved: PASS
+- Compatibility analyzer returns score and warnings: PASS
+- Bubble data X/Y preserved through scene creation: PASS
+- Bubble projection matches plot coordinates: PASS
+- Bubble drag updates stored X/Y: PASS
+- Dense Sankey columns fit without overlap: PASS
+- Radar interaction updates metric values: PASS
+- Fishbone animated routes present: PASS
+- 120 runtime frames per diagram without NaN: PASS
+- Main static resources available through HTTP: PASS
+
+Runtime demo sizes
+- Fishbone: 28 nodes / 27 links
+- Flowchart: 19 nodes / 22 links
+- Tree: 25 nodes / 24 links
+- Force: 18 nodes / 30 links
+- Sankey: 21 nodes / 33 links
+- Network: 27 nodes / 32 links
+- Radar: 8 metrics / 4 series
+- Bubble: 18 bubbles
+- Mind Map: 29 nodes / 28 links
+- Decision: 21 nodes / 20 links

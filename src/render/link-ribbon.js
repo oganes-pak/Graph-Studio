@@ -1,5 +1,5 @@
 /**
- * Геометрия связи Graph Studio v8.
+ * Геометрия связи Graph Studio v13.
  *
  * Связь рисуется не обычной линией постоянной толщины, а лентой:
  * - в середине сохраняется визуальная сила связи;
@@ -8,6 +8,7 @@
  *   через центр маленького узла и не выглядит толще самого узла.
  */
 import { clamp } from '../core/utils.js';
+import { drawFlowTrail } from './flow-trail.js';
 
 export function buildLinkRibbonGeometry(source, target, options = {}) {
   const dx = Number(target.x) - Number(source.x);
@@ -35,10 +36,20 @@ export function buildLinkRibbonGeometry(source, target, options = {}) {
     y: Number(target.y) - uy * targetInset
   };
   const ribbonLength = Math.max(0.001, Math.hypot(end.x - start.x, end.y - start.y));
+  const curvature = clamp(Number(options.curvature) || 0, -0.35, 0.35);
   const middle = {
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2
+    x: (start.x + end.x) / 2 + nx * ribbonLength * curvature,
+    y: (start.y + end.y) / 2 + ny * ribbonLength * curvature
   };
+  const route = [];
+  for (let index = 0; index <= 24; index += 1) {
+    const t = index / 24;
+    const one = 1 - t;
+    route.push({
+      x: one * one * start.x + 2 * one * t * middle.x + t * t * end.x,
+      y: one * one * start.y + 2 * one * t * middle.y + t * t * end.y
+    });
+  }
 
   const fullMiddleWidth = Math.max(0.2, Number(options.middleWidth) || 1);
   const endpointRatio = clamp(Number(options.endpointRatio) || 0.34, 0.05, 1);
@@ -55,6 +66,8 @@ export function buildLinkRibbonGeometry(source, target, options = {}) {
     nx,
     ny,
     length: ribbonLength,
+    curvature,
+    route,
     sourceWidth: Math.min(fullMiddleWidth, sourceCap),
     middleWidth: fullMiddleWidth,
     targetWidth: Math.min(fullMiddleWidth, targetCap)
@@ -97,35 +110,14 @@ export function drawTaperedRibbon(ctx, geometry) {
  */
 export function drawFlowStreak(ctx, geometry, progress, options = {}) {
   if (!geometry) return;
-  const t = clamp(Number(progress), 0, 1);
-  const headX = geometry.start.x + (geometry.end.x - geometry.start.x) * t;
-  const headY = geometry.start.y + (geometry.end.y - geometry.start.y) * t;
-  const trailLength = clamp(Number(options.trailLength) || 0.075, 0.015, 0.35);
-  const tailT = Math.max(0, t - trailLength);
-  const tailX = geometry.start.x + (geometry.end.x - geometry.start.x) * tailT;
-  const tailY = geometry.start.y + (geometry.end.y - geometry.start.y) * tailT;
-  const width = Math.max(0.45, Number(options.width) || 1.6);
-
-  const gradient = ctx.createLinearGradient?.(tailX, tailY, headX, headY);
-  if (gradient?.addColorStop) {
-    gradient.addColorStop(0, options.tailColor ?? 'rgba(255,255,255,0)');
-    gradient.addColorStop(0.68, options.color ?? '#ffffff');
-    gradient.addColorStop(1, options.headColor ?? options.color ?? '#ffffff');
-    ctx.strokeStyle = gradient;
-  } else {
-    ctx.strokeStyle = options.color ?? '#ffffff';
-  }
-  ctx.lineCap = 'round';
-  ctx.lineWidth = width;
-  ctx.beginPath();
-  ctx.moveTo(tailX, tailY);
-  ctx.lineTo(headX, headY);
-  ctx.stroke();
-
-  if (options.headDot === true) {
-    ctx.fillStyle = options.headColor ?? options.color ?? '#ffffff';
-    ctx.beginPath();
-    ctx.arc(headX, headY, Math.max(0.5, width * 0.55), 0, Math.PI * 2);
-    ctx.fill();
-  }
+  drawFlowTrail(ctx, geometry.route ?? [geometry.start, geometry.middle, geometry.end], progress, {
+    color: options.color ?? '#ffffff',
+    headColor: options.headColor,
+    width: options.width,
+    opacity: options.opacity ?? 1,
+    trailLength: options.trailLength,
+    segments: options.segments ?? 20,
+    glowBlur: options.glowBlur ?? 0,
+    headDot: options.headDot === true
+  });
 }

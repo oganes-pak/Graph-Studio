@@ -1,57 +1,56 @@
-# Встраивание Graph Studio v8
+# Встраивание Graph Studio v9
 
-## Web Component, режим просмотра по умолчанию
+## Web Component
 
 ```html
 <script type="module" src="/graph-studio/graph-widget.js"></script>
 
 <graph-studio-widget
   src="/data/project.json"
-  height="620px"
+  diagram-type="mindmap"
   mode="viewer"
+  height="620px"
   controls>
 </graph-studio-widget>
 ```
 
-## JavaScript
+`diagram-type` может принимать любой из десяти ID. Если JSON содержит `diagramType`, импортированный проект переопределяет начальный атрибут.
 
-```html
-<div id="graph"></div>
-<script type="module">
-  import { mountGraphStudio } from '/graph-studio/graph-widget.js';
+## Императивный helper
 
-  const widget = mountGraphStudio('#graph', {
-    src: '/data/project.json',
-    height: '620px',
-    mode: 'viewer',
-    controls: true
-  });
-</script>
+```js
+import { mountGraphStudio } from '/graph-studio/graph-widget.js';
+
+const widget = mountGraphStudio('#host', {
+  src: '/data/project.json',
+  diagramType: 'sankey',
+  mode: 'viewer',
+  height: '620px',
+  controls: true
+});
 ```
 
-## iframe
+## Iframe
 
 ```html
 <iframe
-  src="/graph-studio/embed.html?src=/data/project.json&controls=true"
-  title="Граф связей"
+  src="/graph-studio/embed.html?src=/data/project.json"
+  title="Диаграмма"
   style="width:100%;height:620px;border:0">
 </iframe>
 ```
 
-## Обновление данных владельцем сайта
+Основной редактор остаётся административным модулем. Публикация выполняется через Web Component или iframe, а не через отдельную тему сайта.
 
-```js
-const widget = document.querySelector('graph-studio-widget');
-widget.setData({ nodes, links });
-widget.updateConfig({ legend: { enabled: false } });
+## Встраивание информационной панели v12
+
+```html
+<graph-studio-widget
+  src="/data/report.json"
+  diagram-type="info"
+  mode="viewer"
+  height="720px">
+</graph-studio-widget>
 ```
 
-Посетитель viewer-компонента не получает административную панель. Владелец
-страницы может обновлять данные через публичный API компонента.
-
-## v8: просмотр является модулем
-
-Не требуется формировать URL отдельной viewer-темы. Для сайта используйте
-`<graph-studio-widget mode="viewer">`; для CMS без поддержки Web Components
-используйте `embed.html?src=...` внутри iframe.
+В режиме `info` Web Component скрывает Canvas и показывает прокручиваемый DOM-документ внутри Shadow DOM.

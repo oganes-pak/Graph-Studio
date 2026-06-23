@@ -1,23 +1,25 @@
 /**
- * Простой декларативный формат для ИИ без MCP.
- * Модель генерирует один JSON-документ, приложение проверяет и воспроизводит
- * его без попыток угадывать смысл свободного JavaScript-кода.
+ * Декларативный формат для ИИ без MCP.
+ * Модель возвращает один JSON-документ graph-studio/2.
  */
-import { cloneValue, deepMerge, isPlainObject } from '../core/utils.js';
-import { validateGraphData } from '../core/graph-schema.js';
+import { cloneValue, isPlainObject } from '../core/utils.js';
+import { normalizeProjectImport } from '../io/import-normalizer.js';
 
-export const AI_PLAN_FORMAT = 'graph-studio/1';
+export const AI_PLAN_FORMAT = 'graph-studio/3';
 
 export const AI_PLAN_TEMPLATE = Object.freeze({
   format: AI_PLAN_FORMAT,
-  title: 'Название графа',
+  title: 'Название диаграммы',
+  diagramType: 'network',
   nodes: [
     { id: 'core', name: 'Главная тема', type: 'core', description: 'Центральное понятие' },
     { id: 'branch_1', name: 'Первая ветвь', type: 'group' }
   ],
   connections: [
-    { from: 'core', to: 'branch_1', label: 'связано с', description: '' }
+    { from: 'core', to: 'branch_1', label: 'связано с', value: 1 }
   ],
+  chart: { metrics: [], series: [] },
+  document: { title: '', subtitle: '', sections: [] },
   view: {
     layout: 'planetary',
     mode: 'admin',
@@ -32,70 +34,61 @@ export const AI_PLAN_TEMPLATE = Object.freeze({
   }
 });
 
-export function normalizeAiPlan(plan) {
+export function normalizeAiPlan(plan, { defaultConfig } = {}) {
   if (!isPlainObject(plan)) throw new TypeError('JSON-план должен быть объектом.');
-  if (plan.format && plan.format !== AI_PLAN_FORMAT) {
+  if (plan.format && !['graph-studio/1', 'graph-studio/2', AI_PLAN_FORMAT].includes(plan.format)) {
     throw new Error(`Неподдерживаемый формат: ${plan.format}. Ожидается ${AI_PLAN_FORMAT}.`);
   }
-  if (!Array.isArray(plan.nodes)) throw new TypeError('Поле nodes должно быть массивом.');
-  if (!Array.isArray(plan.connections) && !Array.isArray(plan.links)) {
-    throw new TypeError('Поле connections должно быть массивом.');
-  }
 
-  const nodes = plan.nodes.map((node) => ({
-    id: String(node.id ?? '').trim(),
-    name: String(node.name ?? node.label ?? node.id ?? '').trim(),
-    type: String(node.type ?? 'node'),
-    description: String(node.description ?? ''),
-    ...(node.color ? { color: node.color } : {}),
-    ...(Number.isFinite(Number(node.size)) ? { size: Number(node.size) } : {})
-  }));
+  const payload = {
+    ...cloneValue(plan),
+    diagramType: plan.diagramType ?? plan.view?.diagramType ?? 'network',
+    links: plan.links,
+    connections: plan.connections,
+    config: {
+      ...(defaultConfig ?? {}),
+      diagram: { ...(defaultConfig?.diagram ?? {}), type: plan.diagramType ?? plan.view?.diagramType ?? 'network' },
+      ...(isPlainObject(plan.view?.legend) ? { legend: cloneValue(plan.view.legend) } : {}),
+      ...(isPlainObject(plan.view?.appearance) ? cloneValue(plan.view.appearance) : {}),
+      ...(plan.view?.layout ? { layout: { ...(defaultConfig?.layout ?? {}), type: plan.view.layout } } : {}),
+      ...(plan.view?.mode ? {
+        editor: {
+          ...(defaultConfig?.editor ?? {}),
+          mode: plan.view.mode,
+          locked: plan.view.mode === 'viewer',
+          uiVisible: plan.view.mode !== 'viewer',
+          allowHoverEditor: plan.view.mode !== 'viewer'
+        }
+      } : {})
+    }
+  };
 
-  const rawConnections = plan.connections ?? plan.links;
-  const links = rawConnections.map((connection) => ({
-    source: String(connection.from ?? connection.source ?? '').trim(),
-    target: String(connection.to ?? connection.target ?? '').trim(),
-    label: String(connection.label ?? ''),
-    description: String(connection.description ?? ''),
-    ...(connection.color ? { color: connection.color } : {}),
-    ...(Number.isFinite(Number(connection.width)) ? { width: Number(connection.width) } : {})
-  }));
-
-  const data = { nodes, links };
-  validateGraphData(data);
-
-  const view = isPlainObject(plan.view) ? plan.view : {};
-  const patch = {};
-  if (view.layout) patch.layout = { type: view.layout };
-  if (view.mode) {
-    patch.editor = {
-      mode: view.mode,
-      locked: view.mode === 'viewer',
-      uiVisible: view.mode !== 'viewer',
-      allowHoverEditor: view.mode !== 'viewer'
-    };
-  }
-  if (isPlainObject(view.legend)) patch.legend = cloneValue(view.legend);
-  if (isPlainObject(view.appearance)) Object.assign(patch, cloneValue(view.appearance));
+  const { project, report } = normalizeProjectImport(payload, {
+    defaultConfig: defaultConfig ?? undefined
+  });
 
   return {
     format: AI_PLAN_FORMAT,
     title: String(plan.title ?? ''),
-    data,
-    configPatch: patch
+    project,
+    report
   };
 }
 
 export function applyAiPlan(engine, plan, { force = false } = {}) {
-  const normalized = normalizeAiPlan(plan);
-  engine.setData(normalized.data, { force });
-  if (Object.keys(normalized.configPatch).length) {
-    engine.updateConfig(normalized.configPatch, { force, rebuild: true });
-  }
+  const normalized = normalizeAiPlan(plan, { defaultConfig: engine.config });
+  engine.setConfig(normalized.project.config, { force, preserveCamera: true });
+  engine.setData({
+    nodes: normalized.project.nodes,
+    links: normalized.project.links,
+    chart: normalized.project.chart,
+    document: normalized.project.document
+  }, { force });
   return {
     ...engine.exportData(),
     format: normalized.format,
-    title: normalized.title
+    title: normalized.title,
+    importReport: normalized.report
   };
 }
 
@@ -103,6 +96,7 @@ export function exportAiPlan(engine, title = '') {
   return {
     format: AI_PLAN_FORMAT,
     title,
+    diagramType: engine.normalizedDiagramType(),
     nodes: cloneValue(engine.data.nodes),
     connections: engine.data.links.map((link) => ({
       from: link.source,
@@ -110,10 +104,14 @@ export function exportAiPlan(engine, title = '') {
       label: link.label ?? '',
       description: link.description ?? '',
       color: link.color,
-      width: link.width
+      width: link.width,
+      value: link.value
     })),
+    chart: cloneValue(engine.data.chart ?? { metrics: [], series: [] }),
+    document: cloneValue(engine.data.document ?? { title: '', subtitle: '', sections: [] }),
     view: {
       layout: engine.normalizedLayoutType(),
+      diagramType: engine.normalizedDiagramType(),
       mode: engine.config.editor?.mode ?? 'admin',
       legend: cloneValue(engine.config.legend)
     }

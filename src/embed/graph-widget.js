@@ -7,8 +7,10 @@ import { NodeInfoController } from '../ui/node-info-controller.js';
 import { executeGraphTool, GRAPH_TOOL_DEFINITIONS } from '../model/tool-registry.js';
 import { applyAiPlan, exportAiPlan } from '../model/ai-plan.js';
 import { assertAdminMode, assertToolAllowedInMode } from '../model/access-policy.js';
+import { normalizeProjectImport } from '../io/import-normalizer.js';
+import { renderInfoDocument } from '../render/info/info-document-renderer.js';
 
-const EMPTY_GRAPH = { nodes: [], links: [] };
+const EMPTY_GRAPH = { nodes: [], links: [], chart: { metrics: [], series: [] }, document: { title: '', subtitle: '', sections: [] } };
 
 /**
  * Независимый Web Component для размещения Graph Studio на любом сайте.
@@ -16,7 +18,7 @@ const EMPTY_GRAPH = { nodes: [], links: [] };
  * масштабировать граф, но не изменять данные и конфигурацию.
  */
 export class GraphStudioWidget extends HTMLElement {
-  static observedAttributes = ['src', 'height', 'mode', 'locked', 'layout', 'controls', 'refresh-interval'];
+  static observedAttributes = ['src', 'height', 'mode', 'locked', 'layout', 'diagram-type', 'controls', 'refresh-interval'];
 
   constructor() {
     super();
@@ -36,6 +38,7 @@ export class GraphStudioWidget extends HTMLElement {
     this.renderShell();
     const mode = this.getAttribute('mode') === 'admin' ? 'admin' : 'viewer';
     const patch = {
+      diagram: { type: this.getAttribute('diagram-type') || DEFAULT_GRAPH_CONFIG.diagram.type },
       layout: { type: this.getAttribute('layout') || DEFAULT_GRAPH_CONFIG.layout.type },
       editor: {
         mode,
@@ -62,7 +65,16 @@ export class GraphStudioWidget extends HTMLElement {
     this.bindControls();
     this.engine.setEditingLocked(mode === 'viewer' || this.hasAttribute('locked'));
     this.engine.start();
+    const rootSurface = this.shadowRoot.querySelector('.root');
+    this.engine.canvas.addEventListener('graph:transitionstart', () => {
+      rootSurface.classList.remove('diagram-switching');
+      void rootSurface.offsetWidth;
+      rootSurface.classList.add('diagram-switching');
+    });
+    this.engine.canvas.addEventListener('graph:transitionend', () => rootSurface.classList.remove('diagram-switching'));
     this.ready = true;
+    this.applyMode();
+    this.renderModeContent();
     window.addEventListener('message', this.messageHandler);
     this.loadSource();
     this.configureRefreshTimer();
@@ -83,6 +95,7 @@ export class GraphStudioWidget extends HTMLElement {
     if (name === 'src') this.loadSource();
     if (name === 'height') this.style.setProperty('--graph-height', newValue || '520px');
     if (name === 'layout' && newValue) this.engine.setLayout(newValue);
+    if (name === 'diagram-type' && newValue) { this.engine.setDiagramType(newValue); this.renderModeContent(); }
     if (name === 'controls') this.updateControlsVisibility();
     if (name === 'refresh-interval') this.configureRefreshTimer();
     if (name === 'mode' || name === 'locked') this.applyMode();
@@ -95,6 +108,9 @@ export class GraphStudioWidget extends HTMLElement {
         :host{display:block;width:100%;--graph-height:520px;font-family:Inter,Arial,sans-serif;color:#17232d}
         .root{position:relative;width:100%;height:var(--graph-height);min-height:260px;overflow:hidden;border-radius:16px;background:#eef3f6;isolation:isolate}
         canvas{width:100%;height:100%;display:block;touch-action:none;outline:none}
+        .info-document{position:absolute;inset:0;z-index:5;overflow:auto;padding:clamp(18px,3vw,38px);background:linear-gradient(145deg,#eef3f7,#dfe8ef);box-sizing:border-box;color:#17232d}
+        .info-document[hidden]{display:none}.info-document-header{text-align:center;margin:0 auto 24px;max-width:900px}.info-document-header h1{font-size:clamp(26px,4vw,48px);margin:0 0 8px}.info-section-deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:22px;max-width:1400px;margin:auto}.info-section{background:rgba(255,255,255,.95);border-radius:20px;padding:22px;box-shadow:0 18px 48px rgba(25,44,58,.13);border-top:5px solid var(--section-color,#3d5c95)}.info-section-heading{display:flex;gap:14px;align-items:flex-start}.info-section-index,.info-rank{display:grid;place-items:center;min-width:36px;height:36px;border-radius:50%;background:var(--section-color,#3d5c95);color:#fff;font-weight:900}.info-ranked-list,.info-block-grid{display:grid;gap:12px;margin-top:16px}.info-ranked-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border-left:4px solid var(--item-color);padding:12px;background:#f7fafc;border-radius:12px}.info-ranked-item h3,.info-ranked-item p,.info-mini-card h3,.info-mini-card p{margin:0}.info-status{padding:6px 9px;border-radius:999px;background:var(--item-color);color:#fff;font-size:11px;font-weight:900}.info-block-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.info-mini-card{padding:16px;border-radius:14px;border-left:5px solid var(--block-color);background:#f8fafc}.info-mini-value{display:block;font-size:24px;margin:8px 0}.info-table-wrap{overflow:auto;margin-top:16px}.info-table{width:100%;border-collapse:collapse}.info-table th,.info-table td{padding:10px;border-bottom:1px solid #dce4ea;text-align:left}.info-table caption{text-align:left;font-weight:800;margin-bottom:10px}
+        .info-timeline,.info-alert-list,.info-checklist,.info-progress-list,.info-recommendations{display:grid;gap:10px;margin-top:14px}.info-timeline-item,.info-alert,.info-check-item,.info-recommendation{padding:12px;border-left:4px solid var(--item-color,var(--section-color));border-radius:12px;background:#f7fafc}.info-comparison,.info-matrix,.info-fact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:14px}.info-compare-column,.info-matrix-cell,.info-fact{padding:14px;border-top:4px solid var(--item-color,var(--section-color));border-radius:12px;background:#f7fafc}.info-progress-track{height:9px;border-radius:999px;background:#dfe7ed;overflow:hidden}.info-progress-fill{display:block;height:100%;background:var(--item-color,var(--section-color))}.info-quote{padding:20px;border-left:6px solid var(--section-color);background:#f7fafc;border-radius:12px}.info-glossary{display:grid;grid-template-columns:minmax(90px,.35fr) 1fr;gap:8px 14px}.info-glossary dd{margin:0}.info-sources{display:grid;gap:8px}.info-summary-text{font-size:16px;line-height:1.6}.root.diagram-switching,.info-document.diagram-switching{animation:diagramEnter .72s ease}@keyframes diagramEnter{from{opacity:.5;filter:blur(2px)}to{opacity:1;filter:none}}
         .toolbar{position:absolute;z-index:20;right:12px;top:12px;display:flex;gap:7px;flex-wrap:wrap}
         button{border:1px solid rgba(50,70,85,.25);background:rgba(255,255,255,.92);color:#1d2b35;border-radius:999px;padding:7px 11px;cursor:pointer}
         .legend{position:absolute;z-index:12;min-width:140px;max-width:42%;padding:10px 12px;border:1px solid rgba(71,91,107,.24);border-radius:12px;background:rgba(255,255,255,.9);box-shadow:0 10px 30px rgba(29,46,59,.14);pointer-events:none}
@@ -106,12 +122,13 @@ export class GraphStudioWidget extends HTMLElement {
       </style>
       <div class="root">
         <canvas tabindex="0" aria-label="Интерактивный граф"></canvas>
+        <section class="info-document" hidden></section>
         <div class="toolbar" ${this.hasAttribute('controls') ? '' : 'hidden'}>
           <button data-action="planetary">Паутина</button><button data-action="hex">Соты</button><button data-action="pause">Пауза</button>
         </div>
         <aside class="legend" hidden></aside>
         <article class="node-info" hidden><header class="heading"><div class="title-wrap"><span class="kicker" data-node-info-type></span><h2 data-node-info-title></h2></div><button class="close" data-node-info-close>×</button></header><div class="description" data-node-info-description></div></article>
-        <div class="status">Graph Studio v8</div>
+        <div class="status">Graph Studio v13</div>
       </div>`;
   }
 
@@ -132,6 +149,8 @@ export class GraphStudioWidget extends HTMLElement {
       interaction: { nodeDraggingEnabled: mode === 'admin' }
     }, { force: true, rebuild: false });
     this.engine.setEditingLocked(locked);
+    this.nodeInfoController?.setEnabled(mode === 'admin' && !locked);
+    this.renderModeContent();
     const canChangeLayout = mode === 'admin' || Boolean(this.engine.config.editor.viewerCanChangeLayout);
     this.shadowRoot.querySelector('[data-action="planetary"]').hidden = !canChangeLayout;
     this.shadowRoot.querySelector('[data-action="hex"]').hidden = !canChangeLayout;
@@ -151,9 +170,10 @@ export class GraphStudioWidget extends HTMLElement {
     try {
       const response = await fetch(src);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      if (payload.config) this.engine.setConfig(payload.config, { preserveCamera: true, force: true });
-      this.engine.setData({ nodes: payload.nodes ?? payload.data?.nodes ?? [], links: payload.links ?? payload.data?.links ?? [] }, { force: true });
+      const { project } = normalizeProjectImport(await response.json());
+      this.engine.setConfig(project.config, { preserveCamera: true, force: true });
+      this.engine.setData({ nodes: project.nodes, links: project.links, chart: project.chart, document: project.document }, { force: true });
+      this.renderModeContent();
       this.applyMode();
       this.dispatchEvent(new CustomEvent('graph-load', { detail: { src, data: this.getData() } }));
     } catch (error) {
@@ -162,7 +182,23 @@ export class GraphStudioWidget extends HTMLElement {
     }
   }
 
-  setData(data) { if (!this.ready) this.pendingData = cloneValue(data); else this.engine.setData(data, { force: true }); return this; }
+  renderModeContent() {
+    if (!this.engine) return;
+    const info = this.shadowRoot.querySelector('.info-document');
+    const canvas = this.shadowRoot.querySelector('canvas');
+    const isInfo = this.engine.normalizedDiagramType() === 'info';
+    info.hidden = !isInfo;
+    canvas.hidden = isInfo;
+    if (isInfo) renderInfoDocument(info, this.engine.data.document, this.engine.config);
+  }
+
+  setData(data) {
+    const { project } = normalizeProjectImport(data);
+    const normalized = { nodes: project.nodes, links: project.links, chart: project.chart, document: project.document };
+    if (!this.ready) this.pendingData = cloneValue(normalized);
+    else { this.engine.setConfig(project.config, { preserveCamera: true, force: true }); this.engine.setData(normalized, { force: true }); this.renderModeContent(); }
+    return this;
+  }
   getData() { return this.engine ? cloneValue(this.engine.data) : cloneValue(this.pendingData ?? EMPTY_GRAPH); }
   getProject() { return this.engine ? this.engine.exportData() : { ...this.getData(), config: cloneValue(DEFAULT_GRAPH_CONFIG) }; }
   updateConfig(patch) { this.engine.updateConfig(patch, { force: true }); this.applyMode(); return this; }

@@ -1,5 +1,5 @@
 /**
- * Graph Studio v8 UI controller.
+ * Graph Studio v14 UI controller.
  * Отвечает только за формы, режимы admin/viewer, JSON-план и DOM-оверлеи.
  * Математика, физика и Canvas остаются в Graph3DEngine.
  */
@@ -14,9 +14,17 @@ import { LivePreviewController } from './live-preview-controller.js';
 import { executeGraphTool, GRAPH_TOOL_DEFINITIONS } from '../model/tool-registry.js';
 import { AI_PLAN_TEMPLATE, applyAiPlan, exportAiPlan } from '../model/ai-plan.js';
 import { assertAdminMode as requireAdminMode, assertToolAllowedInMode } from '../model/access-policy.js';
+import { DIAGRAM_TYPES, getDiagramDefinition } from '../diagrams/registry.js';
+import { getDiagramTemplate } from '../diagrams/templates.js';
+import { analyzeDiagramCompatibility } from '../diagrams/compatibility.js';
+import { nextAutomaticColor } from '../core/color-palette.js';
+import { normalizeProjectImport, formatImportReport } from '../io/import-normalizer.js';
+import { renderInfoDocument } from '../render/info/info-document-renderer.js';
+import { getVisualPreset } from '../presets/visual-presets.js';
 
-const EMPTY_GRAPH = Object.freeze({ nodes: [], links: [] });
-const STORAGE_KEY = 'graph-studio-v8-project';
+const EMPTY_GRAPH = Object.freeze({ nodes: [], links: [], chart: { metrics: [], series: [] }, document: { title: '', subtitle: '', sections: [] } });
+const STORAGE_KEY = 'graph-studio-v14-project';
+const LEGACY_STORAGE_KEYS = Object.freeze(['graph-studio-v14-project', 'graph-studio-v12-project', 'graph-studio-v11-project', 'graph-studio-v10-project', 'graph-studio-v9-project']);
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 
@@ -52,20 +60,28 @@ const elements = {
   startupError: $('#startup-error'), controlPanel: $('#control-panel'), modeBadge: $('#mode-badge'),
   lockEditor: $('#lock-editor'), previewViewer: $('#preview-viewer'), copyEmbedCode: $('#copy-embed-code'),
   returnAdmin: $('#return-admin'),
-  canvas: $('#graph-canvas'), canvasCard: $('#canvas-card'), pointerIndicator: $('#pointer-indicator'),
+  canvas: $('#graph-canvas'), canvasCard: $('#canvas-card'), infoDocumentView: $('#info-document-view'), pointerIndicator: $('#pointer-indicator'),
   emptyOverlay: $('#empty-overlay'), status: $('#status-bar'), graphToolbar: $('#graph-toolbar'),
+  quickDiagrams: $('#quick-diagrams'), quickNetworkLayouts: $('#quick-network-layouts'),
   quickPlanetary: $('#quick-planetary'), quickHex: $('#quick-hex'), pauseButton: $('#pause-button'),
   stageLockEditor: $('#stage-lock-editor'), graphLegend: $('#graph-legend'),
   nodeInfoPopover: $('#node-info-popover'), linkEditorPopover: $('#link-editor-popover'),
 
+  diagramType: $('#diagram-type'), diagramDescription: $('#diagram-description'),
+  diagramCompatibility: $('#diagram-compatibility'), compatibilityTitle: $('#compatibility-title'),
+  compatibilityScore: $('#compatibility-score'), compatibilitySummary: $('#compatibility-summary'),
+  compatibilityWarnings: $('#compatibility-warnings'), loadDiagramTemplate: $('#load-diagram-template'),
   nodeForm: $('#node-form'), nodeId: $('#node-id'), nodeName: $('#node-name'), nodeType: $('#node-type'),
-  nodeSize: $('#node-size'), nodeColor: $('#node-color'), nodeDescription: $('#node-description'),
+  nodeSize: $('#node-size'), nodeOpacity: $('#node-opacity'), nodeColor: $('#node-color'), nodeAutoColor: $('#node-auto-color'), nodeShape: $('#node-shape'),
+  nodeX: $('#node-x'), nodeY: $('#node-y'), nodeValue: $('#node-value'), nodeColumn: $('#node-column'),
+  nodeDescription: $('#node-description'),
   linkForm: $('#link-form'), linkSource: $('#link-source'), linkTarget: $('#link-target'),
   linkLabel: $('#link-label'), linkDescription: $('#link-description'), linkOwnColor: $('#link-own-color'),
-  linkWidth: $('#link-width'), addLinkButton: $('#add-link-button'), linkFormHint: $('#link-form-hint'),
+  linkWidth: $('#link-width'), linkValue: $('#link-value'), addLinkButton: $('#add-link-button'), linkFormHint: $('#link-form-hint'),
   nodeList: $('#node-list'), linkList: $('#link-list'), loadDemo: $('#load-demo'), clearData: $('#clear-data'),
   exportData: $('#export-data'), importData: $('#import-data'), importFile: $('#import-file'),
 
+  visualPreset: $('#visual-preset'), presetDescription: $('#preset-description'), applyPreset: $('#apply-preset'),
   layoutType: $('#layout-type'), ringGap: $('#ring-gap'), branchSpread: $('#branch-spread'),
   hexGap: $('#hex-gap'), layoutTransition: $('#layout-transition'), jellyStrength: $('#jelly-strength'),
   physicsDamping: $('#physics-damping'), inertiaEnabled: $('#inertia-enabled'),
@@ -78,18 +94,23 @@ const elements = {
 
   coreSize: $('#core-size'), nodeDefaultSize: $('#node-default-size'), coreColor: $('#core-color'),
   groupColor: $('#group-color'), nodeDefaultColor: $('#node-default-color'), accentColor: $('#accent-color'),
+  blockTextColor: $('#block-text-color'), labelTextColor: $('#label-text-color'),
+  backgroundCenterColor: $('#background-center-color'), backgroundEdgeColor: $('#background-edge-color'),
   fontFamily: $('#font-family'), nodeLabelMode: $('#node-label-mode'), nodeLabelSize: $('#node-label-size'),
   nodeLabelBackground: $('#node-label-background'), networkPulseEnabled: $('#network-pulse-enabled'),
   pulseStyle: $('#pulse-style'), pulseBpm: $('#pulse-bpm'), pulseDelay: $('#pulse-delay'),
   pulseAmplitude: $('#pulse-amplitude'), pulseDeformation: $('#pulse-deformation'),
-  pulseLinkWidth: $('#pulse-link-width'), pulseColor: $('#pulse-color'), linkColor: $('#link-color'),
+  pulseLinkWidth: $('#pulse-link-width'), pulseColor: $('#pulse-color'),
+  pulseFillEnabled: $('#pulse-fill-enabled'), pulseFillStrength: $('#pulse-fill-strength'), linkColor: $('#link-color'),
   linkTaperEnabled: $('#link-taper-enabled'), linkEndpointRatio: $('#link-endpoint-ratio'),
+  linkSmoothness: $('#link-smoothness'), linkArrowsEnabled: $('#link-arrows-enabled'),
   linkFlowEnabled: $('#link-flow-enabled'), linkFlowCount: $('#link-flow-count'),
   linkFlowSpeed: $('#link-flow-speed'), linkFlowSize: $('#link-flow-size'), linkFlowTrail: $('#link-flow-trail'),
   particlesEnabled: $('#particles-enabled'), particleCount: $('#particle-count'),
   particleSize: $('#particle-size'), particleSpeed: $('#particle-speed'), particleColor: $('#particle-color'),
   backgroundDotsEnabled: $('#background-dots-enabled'), backgroundDotSize: $('#background-dot-size'),
-  backgroundDotOpacity: $('#background-dot-opacity'), tooltipWidth: $('#tooltip-width'),
+  backgroundDotOpacity: $('#background-dot-opacity'), bubbleShowXAxis: $('#bubble-show-x-axis'),
+  bubbleShowYAxis: $('#bubble-show-y-axis'), bubbleShowGrid: $('#bubble-show-grid'), tooltipWidth: $('#tooltip-width'),
   tooltipMaxHeight: $('#tooltip-max-height'),
   tooltipSide: $('#tooltip-side'), tooltipTextAlign: $('#tooltip-text-align'),
   tooltipTitleAlign: $('#tooltip-title-align'), tooltipResizable: $('#tooltip-resizable'),
@@ -102,6 +123,8 @@ const elements = {
   aiPlanJson: $('#ai-plan-json'), applyAiPlan: $('#apply-ai-plan'), loadAiTemplate: $('#load-ai-template'),
   exportAiPlan: $('#export-ai-plan'), consoleInput: $('#console-input'), consoleRun: $('#console-run'),
   consoleExample: $('#console-example'), consoleClear: $('#console-clear'), consoleOutput: $('#console-output'),
+  diagramDataJson: $('#diagram-data-json'), applyDiagramData: $('#apply-diagram-data'),
+  refreshDiagramData: $('#refresh-diagram-data'),
   configJson: $('#config-json'), applyConfigJson: $('#apply-config-json'),
   refreshConfigJson: $('#refresh-config-json'), copyConfigJson: $('#copy-config-json')
 };
@@ -115,7 +138,9 @@ const initialConfig = deepMerge(DEFAULT_GRAPH_CONFIG, {
     mode: requestedMode,
     locked: requestedMode === 'viewer',
     uiVisible: requestedMode !== 'viewer',
-    allowHoverEditor: requestedMode !== 'viewer'
+    allowHoverEditor: false,
+    linkEditorActivation: 'click',
+    showNodeInfo: requestedMode !== 'viewer'
   },
   interaction: { nodeDraggingEnabled: requestedMode !== 'viewer' }
 });
@@ -135,6 +160,7 @@ const linkEditorController = new LinkEditorController({
 
 let appMode = requestedMode;
 let adminPreview = false;
+let lastCompatibilityAssessment = null;
 let previousNodeDragging = true;
 let motionPreviewFrame = null;
 let visualPreviewFrame = null;
@@ -187,7 +213,9 @@ function syncOutputs() {
   syncOutput('pulse-amplitude', round(elements.pulseAmplitude.value, 2));
   syncOutput('pulse-deformation', round(elements.pulseDeformation.value, 3));
   syncOutput('pulse-link-width', round(elements.pulseLinkWidth.value, 2));
+  syncOutput('pulse-fill-strength', round(elements.pulseFillStrength.value, 2));
   syncOutput('link-endpoint-ratio', round(elements.linkEndpointRatio.value, 2));
+  syncOutput('link-smoothness', round(elements.linkSmoothness.value, 2));
   syncOutput('link-flow-count', elements.linkFlowCount.value);
   syncOutput('link-flow-speed', round(elements.linkFlowSpeed.value, 2));
   syncOutput('link-flow-size', round(elements.linkFlowSize.value, 1));
@@ -199,10 +227,124 @@ function syncOutputs() {
   syncOutput('background-dot-opacity', round(elements.backgroundDotOpacity.value, 2));
   syncOutput('tooltip-width', elements.tooltipWidth.value, ' px');
   syncOutput('tooltip-max-height', elements.tooltipMaxHeight.value, ' px');
+  syncOutput('node-opacity', round(elements.nodeOpacity.value, 2));
+}
+
+
+function renderDiagramCompatibility(assessment = null) {
+  const currentType = engine.normalizedDiagramType();
+  const targetType = elements.diagramType.value || currentType;
+  const result = assessment ?? analyzeDiagramCompatibility(engine.data, currentType, targetType);
+  elements.diagramCompatibility.dataset.level = result.level;
+  elements.compatibilityTitle.textContent = result.title;
+  elements.compatibilityScore.textContent = `${result.score}%`;
+  elements.compatibilitySummary.textContent = result.summary;
+  elements.compatibilityWarnings.replaceChildren();
+  for (const text of [...result.warnings, ...result.derived]) {
+    const item = document.createElement('li');
+    item.textContent = text;
+    elements.compatibilityWarnings.append(item);
+  }
+  return result;
+}
+
+function switchDiagramType(targetType) {
+  const assessment = analyzeDiagramCompatibility(engine.data, engine.normalizedDiagramType(), targetType);
+  lastCompatibilityAssessment = assessment;
+  engine.setDiagramType(targetType);
+  livePreview.syncCommitted();
+  fillForms();
+  renderDiagramCompatibility(assessment);
+  const extra = assessment.warnings.length ? ` Предупреждений: ${assessment.warnings.length}.` : '';
+  refreshEditor(`Данные интерпретированы как: ${getDiagramDefinition(targetType).title}. Совместимость ${assessment.score}%.${extra}`);
+  saveLocalProject();
+}
+
+function renderQuickDiagramButtons() {
+  elements.quickDiagrams.replaceChildren();
+  for (const definition of DIAGRAM_TYPES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.diagramType = definition.id;
+    button.textContent = definition.shortTitle;
+    button.title = `${definition.title}. ${definition.description}`;
+    button.addEventListener('click', () => guard(() => {
+      if (appMode !== 'admin') throw new Error('Тип диаграммы можно менять только в режиме администратора.');
+      elements.diagramType.value = definition.id;
+      switchDiagramType(definition.id);
+    }));
+    elements.quickDiagrams.append(button);
+  }
+}
+
+function updateDiagramUi() {
+  const definition = getDiagramDefinition(engine.normalizedDiagramType());
+  elements.diagramType.value = definition.id;
+  elements.diagramDescription.textContent = `${definition.description} Лучше всего: ${definition.bestFor} Требуются: ${definition.dataNeeds}`;
+  document.body.dataset.diagramType = definition.id;
+  const networkMode = definition.id === 'network';
+  const infoMode = definition.id === 'info';
+  const radarMode = definition.id === 'radar';
+  const bubbleMode = definition.id === 'bubble';
+  const sankeyMode = definition.id === 'sankey';
+  const shapeMode = ['flowchart', 'decision'].includes(definition.id);
+  elements.layoutType.disabled = !networkMode;
+  elements.ringGap.disabled = !networkMode;
+  elements.branchSpread.disabled = !networkMode;
+  elements.hexGap.disabled = !networkMode;
+  elements.quickDiagrams.hidden = appMode !== 'admin';
+  elements.quickNetworkLayouts.hidden = !networkMode || (appMode === 'viewer' && !engine.config.editor.viewerCanChangeLayout);
+  elements.quickPlanetary.hidden = !networkMode || (appMode === 'viewer' && !engine.config.editor.viewerCanChangeLayout);
+  elements.quickHex.hidden = !networkMode || (appMode === 'viewer' && !engine.config.editor.viewerCanChangeLayout);
+  for (const button of elements.quickDiagrams.querySelectorAll('[data-diagram-type]')) {
+    button.classList.toggle('is-active', button.dataset.diagramType === definition.id);
+    button.setAttribute('aria-pressed', String(button.dataset.diagramType === definition.id));
+  }
+
+  // Показываем только поля, которые имеют смысл для выбранного типа.
+  elements.nodeForm.closest('.panel-card').hidden = radarMode || infoMode;
+  elements.linkForm.closest('.panel-card').hidden = radarMode || bubbleMode || infoMode;
+  elements.nodeShape.closest('.field').hidden = !shapeMode;
+  elements.nodeX.closest('.field').hidden = !bubbleMode;
+  elements.nodeY.closest('.field').hidden = !bubbleMode;
+  elements.nodeValue.closest('.field').hidden = !(bubbleMode || sankeyMode);
+  elements.nodeColumn.closest('.field').hidden = !sankeyMode;
+  elements.linkValue.closest('.field').hidden = !sankeyMode;
+  elements.infoDocumentView.hidden = !infoMode;
+  if (infoMode) renderInfoDocument(elements.infoDocumentView, engine.data.document, engine.config);
+  renderDiagramCompatibility(lastCompatibilityAssessment);
+  lastCompatibilityAssessment = null;
+}
+
+function refreshDiagramData() {
+  if (!elements.diagramDataJson) return;
+  const payload = {
+    format: 'graph-studio/3',
+    diagramType: engine.normalizedDiagramType(),
+    nodes: cloneValue(engine.data.nodes),
+    links: cloneValue(engine.data.links),
+    chart: cloneValue(engine.data.chart ?? { metrics: [], series: [] }),
+    document: cloneValue(engine.data.document ?? { title: '', subtitle: '', sections: [] })
+  };
+  if (document.activeElement !== elements.diagramDataJson) {
+    elements.diagramDataJson.value = JSON.stringify(payload, null, 2);
+  }
+}
+
+function applyImportedPayload(payload, label = 'Проект импортирован') {
+  const { project, report } = normalizeProjectImport(payload);
+  engine.setConfig(project.config, { preserveCamera: true, force: true });
+  engine.setData({ nodes: project.nodes, links: project.links, chart: project.chart, document: project.document }, { force: true });
+  if (appMode === 'viewer') setAppMode('viewer', { preview: adminPreview });
+  livePreview.syncCommitted();
+  fillForms();
+  refreshEditor(`${label}. ${formatImportReport(report)}`);
+  return { project, report };
 }
 
 function fillForms() {
   const c = engine.config;
+  updateDiagramUi();
   elements.layoutType.value = engine.normalizedLayoutType();
   elements.ringGap.value = c.layout.planetary.ringGap;
   elements.branchSpread.value = c.layout.planetary.branchSpread;
@@ -224,6 +366,10 @@ function fillForms() {
   elements.groupColor.value = c.colors.group;
   elements.nodeDefaultColor.value = c.colors.node;
   elements.accentColor.value = c.colors.accent;
+  elements.blockTextColor.value = c.colors.blockText ?? '#ffffff';
+  elements.labelTextColor.value = c.colors.labelText ?? '#17232d';
+  elements.backgroundCenterColor.value = normalizeColorInput(c.colors.backgroundCenter, '#fbfdff');
+  elements.backgroundEdgeColor.value = normalizeColorInput(c.colors.backgroundEdge, '#e7edf2');
   elements.fontFamily.value = c.typography.family;
   elements.nodeLabelMode.value = c.node.labels.mode;
   elements.nodeLabelSize.value = c.node.labels.fontSize;
@@ -236,15 +382,19 @@ function fillForms() {
   elements.pulseDeformation.value = c.networkPulse.nodeDeformation;
   elements.pulseLinkWidth.value = c.networkPulse.linkWidthBoost;
   elements.pulseColor.value = c.networkPulse.color;
+  elements.pulseFillEnabled.checked = c.networkPulse.fillEnabled !== false;
+  elements.pulseFillStrength.value = c.networkPulse.fillStrength ?? 0.28;
   elements.linkColor.value = c.colors.linkDefault;
   elements.linkOwnColor.value = c.colors.linkDefault;
   elements.linkTaperEnabled.checked = c.links.taper?.enabled !== false;
   elements.linkEndpointRatio.value = c.links.taper?.endpointRatio ?? 0.34;
+  elements.linkSmoothness.value = c.links.smoothness ?? 0.82;
+  elements.linkArrowsEnabled.checked = Boolean(c.links.showArrows);
   elements.linkFlowEnabled.checked = Boolean(c.links.flow.enabled);
   elements.linkFlowCount.value = c.links.flow.count;
   elements.linkFlowSpeed.value = c.links.flow.speed;
   elements.linkFlowSize.value = c.links.flow.size;
-  elements.linkFlowTrail.value = c.links.flow.trailLength ?? 0.085;
+  elements.linkFlowTrail.value = c.links.flow.trailLength ?? 0.22;
   elements.particlesEnabled.checked = Boolean(c.particles.enabled);
   elements.particleCount.value = c.particles.count;
   elements.particleSize.value = c.particles.maxSize;
@@ -253,6 +403,11 @@ function fillForms() {
   elements.backgroundDotsEnabled.checked = Boolean(c.background.dotsEnabled);
   elements.backgroundDotSize.value = c.background.dotSize;
   elements.backgroundDotOpacity.value = c.background.dotOpacity;
+  elements.bubbleShowXAxis.checked = c.diagram.bubble.showXAxis !== false;
+  elements.bubbleShowYAxis.checked = c.diagram.bubble.showYAxis !== false;
+  elements.bubbleShowGrid.checked = c.diagram.bubble.showGrid !== false;
+  elements.visualPreset.value = c.presets?.active ?? 'smooth_long';
+  elements.presetDescription.textContent = getVisualPreset(elements.visualPreset.value).description;
   elements.tooltipWidth.value = c.tooltip.width;
   elements.tooltipMaxHeight.value = c.tooltip.maxHeight;
   elements.tooltipSide.value = c.tooltip.preferredSide;
@@ -265,6 +420,7 @@ function fillForms() {
   syncOutputs();
   refreshConfigJson();
   refreshAiPlan();
+  refreshDiagramData();
 }
 
 function motionPatch() {
@@ -305,6 +461,10 @@ function visualPatch() {
       node: elements.nodeDefaultColor.value,
       default: elements.nodeDefaultColor.value,
       accent: elements.accentColor.value,
+      blockText: elements.blockTextColor.value,
+      labelText: elements.labelTextColor.value,
+      backgroundCenter: elements.backgroundCenterColor.value,
+      backgroundEdge: elements.backgroundEdgeColor.value,
       linkDefault: elements.linkColor.value,
       particle: elements.particleColor.value,
       heartPulse: elements.pulseColor.value
@@ -341,9 +501,13 @@ function visualPatch() {
       linkWidthBoost: number(elements.pulseLinkWidth, 1.35),
       glowEnabled: style === 'glow',
       glowBlur: style === 'glow' ? 16 : 0,
+      fillEnabled: elements.pulseFillEnabled.checked,
+      fillStrength: number(elements.pulseFillStrength, 0.28),
       color: elements.pulseColor.value
     },
     links: {
+      showArrows: elements.linkArrowsEnabled.checked,
+      smoothness: number(elements.linkSmoothness, 0.82),
       taper: {
         enabled: elements.linkTaperEnabled.checked,
         endpointRatio: number(elements.linkEndpointRatio, 0.34)
@@ -353,7 +517,7 @@ function visualPatch() {
         count: number(elements.linkFlowCount, 4),
         speed: number(elements.linkFlowSpeed, 0.28),
         size: number(elements.linkFlowSize, 2.2),
-        trailLength: number(elements.linkFlowTrail, 0.085),
+        trailLength: number(elements.linkFlowTrail, 0.22),
         shape: 'streak',
         glowBlur: style === 'glow' ? 9 : 0
       }
@@ -371,6 +535,14 @@ function visualPatch() {
       dotSize: number(elements.backgroundDotSize, 1.25),
       dotOpacity: number(elements.backgroundDotOpacity, .62)
     },
+    diagram: {
+      bubble: {
+        showAxes: elements.bubbleShowXAxis.checked || elements.bubbleShowYAxis.checked || elements.bubbleShowGrid.checked,
+        showXAxis: elements.bubbleShowXAxis.checked,
+        showYAxis: elements.bubbleShowYAxis.checked,
+        showGrid: elements.bubbleShowGrid.checked
+      }
+    },
     tooltip: {
       renderer: 'dom',
       width: number(elements.tooltipWidth, 340),
@@ -387,9 +559,14 @@ function refreshEditor(message = '') {
   fillLinkSelects();
   renderLists();
   renderLegendList();
-  elements.emptyOverlay.hidden = engine.data.nodes.length > 0;
+  const infoHasContent = (engine.data.document?.sections?.length ?? 0) > 0;
+  elements.emptyOverlay.hidden = engine.data.nodes.length > 0
+    || (engine.data.chart?.metrics?.length ?? 0) > 0 || infoHasContent;
+  if (engine.normalizedDiagramType() === 'info') renderInfoDocument(elements.infoDocumentView, engine.data.document, engine.config);
   refreshConfigJson();
   refreshAiPlan();
+  refreshDiagramData();
+  updateDiagramUi();
   if (message) setStatus(message);
 }
 
@@ -493,6 +670,8 @@ function updateLockUi() {
   elements.lockEditor.textContent = locked ? '🔒 Изменения запрещены' : '🔓 Изменения разрешены';
   elements.stageLockEditor.textContent = locked ? '🔒' : '🔓';
   elements.lockEditor.setAttribute('aria-pressed', String(locked));
+  nodeInfoController.setEnabled(appMode === 'admin' && !locked);
+  if (locked) linkEditorController.cancel();
   fillLinkSelects();
   renderLists();
   renderLegendList();
@@ -512,20 +691,24 @@ function setAppMode(mode, { preview = false } = {}) {
     previousNodeDragging = engine.config.interaction.nodeDraggingEnabled;
     linkEditorController.cancel();
     engine.updateConfig({
-      editor: { mode: 'viewer', locked: true, uiVisible: false, allowHoverEditor: false },
+      editor: { mode: 'viewer', locked: true, uiVisible: false, allowHoverEditor: false, showNodeInfo: false },
       interaction: { nodeDraggingEnabled: false }
     }, { force: true, rebuild: false, transient: true });
     engine.setEditingLocked(true);
+    elements.quickDiagrams.hidden = true;
+    elements.quickNetworkLayouts.hidden = !engine.config.editor.viewerCanChangeLayout || engine.normalizedDiagramType() !== 'network';
     elements.quickPlanetary.hidden = !engine.config.editor.viewerCanChangeLayout;
     elements.quickHex.hidden = !engine.config.editor.viewerCanChangeLayout;
     elements.pauseButton.hidden = !engine.config.editor.viewerCanPause;
     setStatus('Режим просмотра: редактирование отключено.');
   } else {
     engine.updateConfig({
-      editor: { mode: 'admin', locked: false, uiVisible: true, allowHoverEditor: true },
+      editor: { mode: 'admin', locked: false, uiVisible: true, allowHoverEditor: false, linkEditorActivation: 'click', showNodeInfo: true },
       interaction: { nodeDraggingEnabled: previousNodeDragging }
     }, { force: true, rebuild: false, transient: true });
     engine.setEditingLocked(false);
+    elements.quickDiagrams.hidden = false;
+    elements.quickNetworkLayouts.hidden = engine.normalizedDiagramType() !== 'network';
     elements.quickPlanetary.hidden = false;
     elements.quickHex.hidden = false;
     elements.pauseButton.hidden = false;
@@ -534,6 +717,7 @@ function setAppMode(mode, { preview = false } = {}) {
   // Не публикуем внутренний экземпляр движка в режиме просмотра.
   // Это не серверная защита, но закрывает случайное редактирование через консоль.
   window.engine = mode === 'admin' ? engine : undefined;
+  updateDiagramUi();
   updateLockUi();
 }
 
@@ -564,11 +748,16 @@ function saveLocalProject() {
 
 function loadLocalProject() {
   try {
-    const text = localStorage.getItem(STORAGE_KEY);
-    if (!text) return false;
-    const payload = JSON.parse(text);
-    if (payload.config) engine.setConfig(payload.config, { preserveCamera: true, force: true });
-    engine.setData({ nodes: payload.nodes ?? [], links: payload.links ?? [] }, { force: true });
+    const keys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
+    const sourceKey = keys.find((key) => localStorage.getItem(key));
+    if (!sourceKey) return false;
+    const text = localStorage.getItem(sourceKey);
+    const { project } = normalizeProjectImport(JSON.parse(text));
+    engine.setConfig(project.config, { preserveCamera: true, force: true });
+    engine.setData({ nodes: project.nodes, links: project.links, chart: project.chart, document: project.document }, { force: true });
+    if (sourceKey !== STORAGE_KEY) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(engine.exportData()));
+    }
     return true;
   } catch {
     return false;
@@ -592,11 +781,9 @@ async function loadProjectSource() {
   if (!src) return false;
   const response = await fetch(src);
   if (!response.ok) throw new Error(`Не удалось загрузить ${src}: HTTP ${response.status}`);
-  const payload = await response.json();
-  if (payload.config) engine.setConfig(payload.config, { preserveCamera: true, force: true });
-  const nodes = payload.nodes ?? payload.data?.nodes ?? [];
-  const links = payload.links ?? payload.data?.links ?? [];
-  engine.setData({ nodes, links }, { force: true });
+  const { project } = normalizeProjectImport(await response.json());
+  engine.setConfig(project.config, { preserveCamera: true, force: true });
+  engine.setData({ nodes: project.nodes, links: project.links, chart: project.chart, document: project.document }, { force: true });
   return true;
 }
 
@@ -609,16 +796,63 @@ for (const button of $$('.tab-button')) {
 }
 
 // Structure
+elements.diagramType.addEventListener('change', () => guard(() => {
+  switchDiagramType(elements.diagramType.value);
+}));
+
+elements.loadDiagramTemplate.addEventListener('click', () => guard(() => {
+  const type = elements.diagramType.value;
+  const template = getDiagramTemplate(type);
+  engine.setDiagramType(type);
+  engine.setData({
+    nodes: template.nodes ?? [],
+    links: template.links ?? [],
+    chart: template.chart ?? { metrics: [], series: [] },
+    document: template.document ?? { title: '', subtitle: '', sections: [] }
+  }, { force: true });
+  if (Array.isArray(template.legend)) {
+    engine.updateConfig({
+      legend: {
+        enabled: template.legend.length > 0,
+        title: template.legendTitle ?? 'Легенда',
+        items: template.legend
+      }
+    }, { force: true, rebuild: false });
+  }
+  livePreview.syncCommitted();
+  lastCompatibilityAssessment = analyzeDiagramCompatibility(engine.data, type, type);
+  fillForms();
+  renderDiagramCompatibility(lastCompatibilityAssessment);
+  saveLocalProject();
+  refreshEditor(`Загружено показательное демо «${template.title ?? getDiagramDefinition(type).title}». ${template.summary ?? ''}`);
+}));
+
+elements.nodeAutoColor.addEventListener('change', () => {
+  elements.nodeColor.disabled = elements.nodeAutoColor.checked;
+  if (elements.nodeAutoColor.checked) elements.nodeColor.value = nextAutomaticColor(engine.data.nodes);
+});
+
  elements.nodeForm.addEventListener('submit', (event) => {
   event.preventDefault();
   guard(() => {
     const node = {
       id: elements.nodeId.value.trim(), name: elements.nodeName.value.trim(), type: elements.nodeType.value,
-      description: elements.nodeDescription.value.trim(), color: elements.nodeColor.value
+      description: elements.nodeDescription.value.trim()
     };
+    if (!elements.nodeAutoColor.checked) node.color = elements.nodeColor.value;
     if (elements.nodeSize.value) node.size = number(elements.nodeSize);
+    node.opacity = number(elements.nodeOpacity, 1);
+    if (elements.nodeShape.value !== 'auto') node.shape = elements.nodeShape.value;
+    if (elements.nodeX.value !== '') node.x = number(elements.nodeX);
+    if (elements.nodeY.value !== '') node.y = number(elements.nodeY);
+    if (elements.nodeValue.value !== '') node.value = number(elements.nodeValue);
+    if (elements.nodeColumn.value !== '') node.column = number(elements.nodeColumn);
     engine.addNode(node);
-    elements.nodeForm.reset(); elements.nodeColor.value = engine.config.colors.node;
+    elements.nodeForm.reset();
+    elements.nodeAutoColor.checked = true;
+    elements.nodeOpacity.value = '1';
+    elements.nodeColor.disabled = true;
+    elements.nodeColor.value = nextAutomaticColor(engine.data.nodes);
     refreshEditor(`Узел ${node.id} добавлен.`);
   });
 });
@@ -632,28 +866,40 @@ elements.linkForm.addEventListener('submit', (event) => {
     engine.addLink({
       source: elements.linkSource.value, target: elements.linkTarget.value,
       label: elements.linkLabel.value.trim(), description: elements.linkDescription.value.trim(),
-      color: elements.linkOwnColor.value, width: number(elements.linkWidth, 2)
+      color: elements.linkOwnColor.value, width: number(elements.linkWidth, 2),
+      value: number(elements.linkValue, 1)
     });
     elements.linkLabel.value = ''; elements.linkDescription.value = '';
     refreshEditor('Связь добавлена.');
   });
 });
 
-elements.loadDemo.addEventListener('click', () => guard(() => { engine.setData(cloneValue(DEMO_GRAPH)); refreshEditor('Пример загружен.'); }));
+elements.loadDemo.addEventListener('click', () => elements.loadDiagramTemplate.click());
 elements.clearData.addEventListener('click', () => guard(() => { engine.setData(cloneValue(EMPTY_GRAPH)); refreshEditor('Граф очищен.'); }));
 elements.exportData.addEventListener('click', () => downloadJson('graph-project.json', engine.exportData()));
 elements.importData.addEventListener('click', () => elements.importFile.click());
 elements.importFile.addEventListener('change', async () => {
   const file = elements.importFile.files?.[0]; if (!file) return;
   try {
-    const payload = JSON.parse(await file.text());
-    if (payload.config) engine.setConfig(payload.config, { preserveCamera: true, force: true });
-    engine.setData({ nodes: payload.nodes ?? [], links: payload.links ?? [] }, { force: true });
-    if (appMode === 'viewer') setAppMode('viewer', { preview: adminPreview });
-    livePreview.syncCommitted(); fillForms(); refreshEditor('Проект импортирован.');
+    applyImportedPayload(JSON.parse(await file.text()), 'Проект импортирован');
   } catch (error) { setStatus(error.message, true); }
   elements.importFile.value = '';
 });
+
+// Наборы настроек. Пресет применяется как обычный live-preview,
+// а кнопка «Применить» в секции движения/оформления фиксирует результат.
+elements.visualPreset.addEventListener('change', () => {
+  const preset = getVisualPreset(elements.visualPreset.value);
+  elements.presetDescription.textContent = preset.description;
+});
+elements.applyPreset.addEventListener('click', () => guard(() => {
+  const preset = getVisualPreset(elements.visualPreset.value);
+  engine.updateConfig({ ...preset.patch, presets: { active: preset.id } }, { rebuild: true });
+  livePreview.syncCommitted();
+  fillForms();
+  saveLocalProject();
+  refreshEditor(`Набор «${preset.title}» применён и зафиксирован.`);
+}));
 
 // Motion: любой ввод сразу показывает результат, но не сохраняет его.
 const motionInputs = [
@@ -708,22 +954,27 @@ elements.pauseButton.addEventListener('click', () => { engine.togglePause(); ele
 // Visual: цвета, пульсация, поток и фон также работают как live-preview.
 const visualInputs = [
   elements.coreSize, elements.nodeDefaultSize, elements.coreColor, elements.groupColor,
-  elements.nodeDefaultColor, elements.accentColor, elements.fontFamily,
+  elements.nodeDefaultColor, elements.accentColor, elements.blockTextColor, elements.labelTextColor,
+  elements.backgroundCenterColor, elements.backgroundEdgeColor, elements.fontFamily,
   elements.nodeLabelMode, elements.nodeLabelSize, elements.nodeLabelBackground,
   elements.networkPulseEnabled, elements.pulseStyle, elements.pulseBpm,
   elements.pulseDelay, elements.pulseAmplitude, elements.pulseDeformation,
-  elements.pulseLinkWidth, elements.pulseColor, elements.linkColor,
-  elements.linkTaperEnabled, elements.linkEndpointRatio, elements.linkFlowEnabled, elements.linkFlowCount, elements.linkFlowSpeed,
+  elements.pulseLinkWidth, elements.pulseColor, elements.pulseFillEnabled, elements.pulseFillStrength,
+  elements.linkColor, elements.linkTaperEnabled, elements.linkEndpointRatio,
+  elements.linkSmoothness, elements.linkArrowsEnabled, elements.linkFlowEnabled, elements.linkFlowCount, elements.linkFlowSpeed,
   elements.linkFlowSize, elements.linkFlowTrail, elements.particlesEnabled, elements.particleCount,
   elements.particleSize, elements.particleSpeed, elements.particleColor,
   elements.backgroundDotsEnabled, elements.backgroundDotSize,
-  elements.backgroundDotOpacity, elements.tooltipWidth, elements.tooltipMaxHeight,
+  elements.backgroundDotOpacity, elements.bubbleShowXAxis, elements.bubbleShowYAxis,
+  elements.bubbleShowGrid, elements.tooltipWidth, elements.tooltipMaxHeight,
   elements.tooltipSide, elements.tooltipTextAlign, elements.tooltipTitleAlign,
   elements.tooltipResizable
 ];
 const visualStructuralInputs = new Set([
   elements.coreSize, elements.nodeDefaultSize, elements.coreColor,
-  elements.groupColor, elements.nodeDefaultColor, elements.accentColor
+  elements.groupColor, elements.nodeDefaultColor, elements.accentColor,
+  elements.blockTextColor, elements.backgroundCenterColor, elements.backgroundEdgeColor,
+  elements.bubbleShowXAxis, elements.bubbleShowYAxis, elements.bubbleShowGrid
 ]);
 function scheduleVisualPreview(rebuild = true) {
   if (appMode !== 'admin' || engine.isEditingLocked()) return;
@@ -774,7 +1025,17 @@ elements.legendForm.addEventListener('submit', (event) => {
 });
 
 // AI and console
-elements.loadAiTemplate.addEventListener('click', () => { elements.aiPlanJson.value = JSON.stringify(AI_PLAN_TEMPLATE, null, 2); });
+elements.loadAiTemplate.addEventListener('click', () => {
+  if (engine.normalizedDiagramType() === 'info') {
+    const template = getDiagramTemplate('info');
+    elements.aiPlanJson.value = JSON.stringify({
+      format: 'graph-studio/3', title: template.title, diagramType: 'info',
+      nodes: [], connections: [], chart: { metrics: [], series: [] },
+      document: template.document,
+      view: { mode: 'admin', legend: { enabled: true, title: 'Разделы', items: template.legend } }
+    }, null, 2);
+  } else elements.aiPlanJson.value = JSON.stringify(AI_PLAN_TEMPLATE, null, 2);
+});
 elements.applyAiPlan.addEventListener('click', () => guard(() => { const result = applyAiPlan(engine, JSON.parse(elements.aiPlanJson.value)); livePreview.syncCommitted(); fillForms(); refreshEditor('JSON-план построен.'); return result; }));
 elements.exportAiPlan.addEventListener('click', () => downloadJson('graph-ai-plan.json', exportAiPlan(engine, 'Граф связей')));
 elements.consoleRun.addEventListener('click', async () => {
@@ -784,8 +1045,16 @@ elements.consoleRun.addEventListener('click', async () => {
   } catch (error) { outputConsole(error.message, true); }
 });
 elements.consoleInput.addEventListener('keydown', (event) => { if (event.ctrlKey && event.key === 'Enter') elements.consoleRun.click(); });
-elements.consoleExample.addEventListener('click', () => { elements.consoleInput.value = `graph.run('add_node', { id: 'new_node', name: 'Новый узел', type: 'node' })`; });
+elements.consoleExample.addEventListener('click', () => {
+  elements.consoleInput.value = engine.normalizedDiagramType() === 'info'
+    ? `graph.run('set_document_data', { document: { title: 'Отчёт', subtitle: 'Создано через консоль', sections: [{ id: 'summary', title: 'Итоги', color: '#3d5c95', blocks: [{ title: 'Показатель', value: '42', text: 'Описание', color: '#4f8a70' }] }] } })`
+    : `graph.run('add_node', { id: 'new_node', name: 'Новый узел', type: 'node' })`;
+});
 elements.consoleClear.addEventListener('click', () => outputConsole('Консоль готова.'));
+elements.applyDiagramData.addEventListener('click', () => guard(() => {
+  applyImportedPayload({ ...JSON.parse(elements.diagramDataJson.value), config: engine.config }, 'Данные диаграммы применены');
+}));
+elements.refreshDiagramData.addEventListener('click', refreshDiagramData);
 elements.applyConfigJson.addEventListener('click', () => guard(() => { engine.setConfig(JSON.parse(elements.configJson.value), { preserveCamera: true }); livePreview.syncCommitted(); fillForms(); refreshEditor('Конфигурация применена и зафиксирована.'); }));
 elements.refreshConfigJson.addEventListener('click', refreshConfigJson);
 elements.copyConfigJson.addEventListener('click', async () => { await navigator.clipboard.writeText(elements.configJson.value); setStatus('Конфигурация скопирована.'); });
@@ -817,8 +1086,25 @@ elements.canvas.addEventListener('pointermove', (event) => {
 });
 elements.canvas.addEventListener('pointerleave', () => { elements.pointerIndicator.hidden = true; });
 elements.canvas.addEventListener('graph:datachange', () => { if (engine.lastChangeTransient) return; refreshEditor(); saveLocalProject(); });
-elements.canvas.addEventListener('graph:configchange', () => { legendController.render(); refreshConfigJson(); if (!engine.lastChangeTransient) saveLocalProject(); });
+elements.canvas.addEventListener('graph:configchange', () => {
+  legendController.render();
+  if (engine.normalizedDiagramType() === 'info') renderInfoDocument(elements.infoDocumentView, engine.data.document, engine.config);
+  refreshConfigJson();
+  if (!engine.lastChangeTransient) saveLocalProject();
+});
 elements.canvas.addEventListener('graph:lockchange', updateLockUi);
+elements.canvas.addEventListener('graph:transitionstart', () => {
+  elements.canvasCard.classList.remove('diagram-switching');
+  elements.infoDocumentView.classList.remove('diagram-switching');
+  void elements.canvasCard.offsetWidth;
+  elements.canvasCard.classList.add('diagram-switching');
+  elements.infoDocumentView.classList.add('diagram-switching');
+});
+elements.canvas.addEventListener('graph:transitionend', () => {
+  elements.canvasCard.classList.remove('diagram-switching');
+  elements.infoDocumentView.classList.remove('diagram-switching');
+});
+
 
 // Public API: одинаковые имена команд с MCP и без него.
 window.graph = {
@@ -844,21 +1130,31 @@ window.graph = {
   },
   addNode(node) { assertAdminMode(); engine.addNode(node); refreshEditor(); return engine.exportData(); },
   addConnection(from, to, options = {}) { assertAdminMode(); engine.addLink({ source: from, target: to, ...options }); refreshEditor(); return engine.exportData(); },
+  setDiagramType(type) { assertAdminMode(); engine.setDiagramType(type); fillForms(); refreshEditor(); return engine.exportData(); },
+  importProject(payload) { assertAdminMode(); return applyImportedPayload(payload, 'Проект импортирован через API'); },
   updateConfig(patch) { assertAdminMode(); engine.updateConfig(patch); fillForms(); return engine.exportData(); },
   lock: () => { engine.setEditingLocked(true); updateLockUi(); return engine.getState(); },
   unlock: () => { assertAdminMode(); engine.setEditingLocked(false); updateLockUi(); return engine.getState(); },
   help: () => ({
     simpleTools: GRAPH_TOOL_DEFINITIONS.map(({ name, title }) => ({ name, title })),
-    aiPlanFormat: 'graph-studio/1',
-    viewerRule: 'В viewer доступны только чтение, вращение, масштабирование и информационные карточки.',
+    aiPlanFormat: 'graph-studio/3',
+    diagramTypes: DIAGRAM_TYPES.map(({ id, title }) => ({ id, title })),
+    viewerRule: 'В viewer доступны чтение, вращение, масштабирование и визуальная подсветка. Всплывающие редакторы и карточки отключены.',
     examples: [
       "graph.run('add_node', { id: 'n1', name: 'Узел' })",
       "graph.run('add_connection', { from: 'core', to: 'n1' })",
       "graph.run('set_layout', { layout: 'hex' })",
+      "graph.run('set_diagram_type', { diagramType: 'mindmap' })",
+      "graph.run('set_document_data', { document: { title: 'Отчёт', sections: [] } })",
       'graph.applyPlan({...})'
     ]
   })
 };
+
+
+function normalizeColorInput(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(String(value ?? '')) ? String(value) : fallback;
+}
 
 function updateTelemetry() {
   const state = engine.getState();
@@ -873,13 +1169,16 @@ function updateTelemetry() {
 
 async function boot() {
   try {
+    renderQuickDiagramButtons();
     const loadedFromSource = await loadProjectSource();
     if (!loadedFromSource) loadLocalProject();
     livePreview.syncCommitted();
     fillForms();
     refreshEditor();
     setAppMode(requestedMode, { preview: false });
-    engine.start();
+    elements.nodeColor.value = nextAutomaticColor(engine.data.nodes);
+elements.nodeColor.disabled = elements.nodeAutoColor.checked;
+engine.start();
     requestAnimationFrame(updateTelemetry);
     window.__GRAPH_APP_READY__ = true;
     elements.startupError.hidden = true;

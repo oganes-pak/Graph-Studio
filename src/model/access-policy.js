@@ -5,6 +5,7 @@
  */
 export const VIEWER_ALLOWED_TOOLS = Object.freeze(new Set([
   'get_project',
+  'get_info_templates',
   'graph_get_project'
 ]));
 

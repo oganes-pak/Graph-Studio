@@ -1,7 +1,10 @@
 /**
- * Информационная карточка узла. Она не редактирует данные и поэтому доступна
- * и в admin, и в viewer-режиме. OverlayManager не даёт ей конфликтовать с
- * редактором связи.
+ * Информационная карточка узла v13.
+ *
+ * Карточка существует только в режиме администратора с разрешёнными
+ * изменениями. В viewer/read-only она полностью закрыта и не реагирует на
+ * наведение. Это устраняет возможность менять размер окна и исключает
+ * всплывающий блок у обычного посетителя.
  */
 export class NodeInfoController {
   constructor({ engine, root, stage, overlays }) {
@@ -11,6 +14,7 @@ export class NodeInfoController {
     this.overlays = overlays;
     this.current = null;
     this.inside = false;
+    this.enabled = true;
     this.hideTimer = null;
 
     this.title = root.querySelector('[data-node-info-title]');
@@ -20,7 +24,9 @@ export class NodeInfoController {
 
     overlays.register('node-info', root);
     this.onHover = (event) => this.handleHover(event.detail);
+    this.onLock = () => this.syncAvailability();
     engine.canvas.addEventListener('graph:hoverchange', this.onHover);
+    engine.canvas.addEventListener('graph:lockchange', this.onLock);
     root.addEventListener('pointerenter', () => {
       this.inside = true;
       clearTimeout(this.hideTimer);
@@ -30,9 +36,33 @@ export class NodeInfoController {
       this.scheduleHide();
     });
     this.closeButton?.addEventListener('click', () => this.hide());
+    this.syncAvailability();
+  }
+
+  canShow() {
+    return this.enabled
+      && !this.engine.isEditingLocked()
+      && (this.engine.config.editor?.mode ?? 'admin') === 'admin'
+      && this.engine.config.editor?.showNodeInfo !== false;
+  }
+
+  setEnabled(enabled) {
+    this.enabled = Boolean(enabled);
+    this.syncAvailability();
+  }
+
+  syncAvailability() {
+    const available = this.canShow();
+    this.root.classList.toggle('is-resizable', available && this.engine.config.tooltip?.resizable !== false);
+    this.root.setAttribute('aria-hidden', String(!available));
+    if (!available) this.hide();
   }
 
   handleHover(detail) {
+    if (!this.canShow()) {
+      this.hide();
+      return;
+    }
     if (detail?.link) {
       this.hide();
       return;
@@ -45,6 +75,7 @@ export class NodeInfoController {
   }
 
   show(node, x, y) {
+    if (!this.canShow()) return;
     clearTimeout(this.hideTimer);
     this.current = node;
     this.title.textContent = node.name || node.id;
@@ -91,11 +122,17 @@ export class NodeInfoController {
   destroy() {
     clearTimeout(this.hideTimer);
     this.engine.canvas.removeEventListener('graph:hoverchange', this.onHover);
+    this.engine.canvas.removeEventListener('graph:lockchange', this.onLock);
   }
 }
 
 function humanType(type) {
-  return ({ core: 'Ядро', root: 'Ядро', group: 'Группа', accent: 'Акцентный узел', node: 'Узел', default: 'Узел' })[type] || 'Узел';
+  return ({
+    core: 'Ядро', root: 'Ядро', group: 'Группа', accent: 'Акцентный узел',
+    node: 'Узел', category: 'Категория причин', cause: 'Причина',
+    process: 'Процесс', decision: 'Решение', chance: 'Событие', outcome: 'Исход',
+    start: 'Начало', end: 'Завершение', input: 'Ввод / вывод', default: 'Узел'
+  })[type] || 'Узел';
 }
 
 function clamp(value, min, max) {

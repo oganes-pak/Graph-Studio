@@ -1,9 +1,9 @@
 {
   "name": "graph-studio-mcp",
-  "version": "8.0.0",
+  "version": "14.0.0",
   "private": true,
   "type": "module",
-  "description": "Локальный MCP-sidecar для атомарного редактирования Graph Studio.",
+  "description": "Локальный MCP-sidecar для Graph Studio v13 и одиннадцати визуальных режимов.",
   "scripts": {
     "start": "node server.mjs",
     "check": "node --check server.mjs && node --check project-store.mjs"

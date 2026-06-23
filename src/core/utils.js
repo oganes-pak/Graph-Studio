@@ -44,10 +44,27 @@ export function pairKey(a, b) {
 }
 
 export function wrapText(ctx, text, maxWidth) {
-  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
+  const rawWords = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!rawWords.length) return [];
+  const words = [];
+  for (const raw of rawWords) {
+    if (ctx.measureText(raw).width <= maxWidth) {
+      words.push(raw);
+      continue;
+    }
+    let chunk = '';
+    for (const symbol of raw) {
+      const candidate = chunk + symbol;
+      if (chunk && ctx.measureText(candidate).width > maxWidth) {
+        words.push(chunk);
+        chunk = symbol;
+      } else chunk = candidate;
+    }
+    if (chunk) words.push(chunk);
+  }
+
   const lines = [];
-  let line = words[0];
+  let line = words[0] ?? '';
   for (let index = 1; index < words.length; index += 1) {
     const candidate = `${line} ${words[index]}`;
     if (ctx.measureText(candidate).width <= maxWidth) line = candidate;
@@ -56,6 +73,6 @@ export function wrapText(ctx, text, maxWidth) {
       line = words[index];
     }
   }
-  lines.push(line);
+  if (line) lines.push(line);
   return lines;
 }

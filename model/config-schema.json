@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "graphstudio://config/schema",
-  "title": "Graph Studio v8 configuration",
+  "title": "Graph Studio v13 configuration",
   "type": "object",
   "properties": {
     "layout": {
@@ -35,6 +35,12 @@
           "enum": [
             "admin",
             "viewer"
+          ]
+        },
+        "linkEditorActivation": {
+          "enum": [
+            "click",
+            "disabled"
           ]
         }
       },
@@ -229,6 +235,134 @@
     },
     "ai": {
       "type": "object",
+      "additionalProperties": true
+    },
+    "diagram": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "info",
+            "fishbone",
+            "flowchart",
+            "tree",
+            "force",
+            "sankey",
+            "network",
+            "radar",
+            "bubble",
+            "mindmap",
+            "decision"
+          ]
+        },
+        "tree": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "mindmap": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "fishbone": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "flowchart": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "decision": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "force": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "sankey": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "radar": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "bubble": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "animation": {
+      "type": "object",
+      "properties": {
+        "diagramTransitionDuration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "diagramTransitionEasing": {
+          "enum": [
+            "smoothstep"
+          ]
+        },
+        "pulseSpeed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "respectReducedMotion": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "performance": {
+      "type": "object",
+      "properties": {
+        "maxDevicePixelRatio": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "targetFps": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 120
+        },
+        "backgroundCache": {
+          "type": "boolean"
+        },
+        "spatialGridThreshold": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 10000
+        },
+        "spatialGridCellSize": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 2000
+        },
+        "hoverThrottleMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "adaptiveQuality": {
+          "type": "boolean"
+        },
+        "lowFpsThreshold": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 120
+        },
+        "lowFpsParticleFactor": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1
+        }
+      },
       "additionalProperties": true
     }
   },

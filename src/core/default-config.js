@@ -1,8 +1,21 @@
 /**
- * Graph Studio v8: единый источник значений по умолчанию.
+ * Graph Studio v14: единый источник значений по умолчанию.
  * UI, embed-виджет, JSON-план и MCP-sidecar используют одну конфигурацию.
  */
 export const DEFAULT_GRAPH_CONFIG = Object.freeze({
+  diagram: {
+    type: 'network',
+    tree: { orientation: 'vertical', layerGap: 170, nodeGap: 120 },
+    mindmap: { levelGap: 190, branchGap: 92 },
+    fishbone: { spineLength: 760, branchHeight: 150, causeGap: 74 },
+    flowchart: { orientation: 'vertical', layerGap: 270, nodeGap: 235, orthogonalLinks: true, showArrows: false, minNodeWidth: 190, maxNodeWidth: 330, minNodeHeight: 76, textPadding: 24 },
+    decision: { orientation: 'horizontal', layerGap: 280, nodeGap: 235, showArrows: false, minNodeWidth: 180, maxNodeWidth: 320, minNodeHeight: 74, textPadding: 22 },
+    force: { initialRadius: 360, depth: 180, anchorFactor: 0.12, repulsionFactor: 2.2, linkDistance: 170 },
+    sankey: { columnGap: 310, nodeGap: 58, nodeWidth: 38, nodeHeight: 46, minNodeHeight: 42, sidePadding: 190, verticalPadding: 100, labelGap: 10, labelMaxWidth: 132, labelFontSize: 11, labelLineHeight: 14, curvature: 0.68, minLinkWidth: 2, maxLinkWidth: 64 },
+    radar: { maxValue: 100, levels: 5, radius: 245, fillOpacity: 0.18, showValues: true },
+    bubble: { width: 720, height: 520, margin: 68, minRadius: 8, maxRadius: 58, showAxes: true, showXAxis: true, showYAxis: true, showGrid: true, xLabel: 'X', yLabel: 'Y' },
+    info: { columns: 2, cardMinWidth: 280, compact: false }
+  },
   layout: {
     type: 'planetary',
     seed: 42,
@@ -28,6 +41,8 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
   animation: {
     enabled: true,
     pulseSpeed: 1,
+    diagramTransitionDuration: 720,
+    diagramTransitionEasing: 'smoothstep',
     respectReducedMotion: false
   },
   interaction: {
@@ -62,8 +77,17 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     group: '#3d5c95',
     node: '#6d7b88',
     accent: '#9a6b31',
+    category: '#4e6f8f',
+    cause: '#7d8792',
+    process: '#4f6f8f',
+    decision: '#9a6b31',
+    chance: '#6a7894',
+    outcome: '#4f7c67',
     default: '#59636f',
     nodeStroke: '#12202b',
+    nodeForeground: '#ffffff',
+    blockText: '#ffffff',
+    axis: '#5f7282',
     linkCore: '#617988',
     linkDefault: '#8699a7',
     tooltipBackground: '#ffffff',
@@ -82,7 +106,7 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     accentSize: 1.9
   },
   node: {
-    sizes: { core: 25, group: 18, node: 13, accent: 16, default: 14 },
+    sizes: { core: 25, group: 18, node: 13, accent: 16, category: 18, cause: 13, process: 17, decision: 18, chance: 17, outcome: 17, default: 14 },
     strokeWidth: 1.1,
     ringWidth: 1.2,
     pulseAmplitude: { core: 0.07, group: 0.02, node: 0.01, accent: 0.025, default: 0.012 },
@@ -98,6 +122,7 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
       minOpacity: 0,
       maxOpacity: 0
     },
+    opacity: 1,
     labels: {
       mode: 'core',
       showOnHover: true,
@@ -111,13 +136,15 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     }
   },
   links: {
+    showArrows: false,
+    smoothness: 0.82,
     widthCore: 3.2,
     widthDefault: 1.8,
     opacity: 0.78,
     inactiveOpacity: 0.12,
     pulseAmplitude: 0.08,
     taper: { enabled: true, endpointRatio: 0.34, minEndpointWidth: 0.55, insetRatio: 0.82 },
-    flow: { enabled: true, count: 4, speed: 0.28, size: 2.2, opacity: 0.92, glowBlur: 0, trailLength: 0.085, shape: 'streak' }
+    flow: { enabled: true, count: 4, speed: 0.34, size: 2.2, opacity: 0.92, glowBlur: 0, trailLength: 0.22, trailSegments: 18, shape: 'streak' }
   },
   networkPulse: {
     enabled: true,
@@ -130,6 +157,8 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     linkWidthBoost: 1.35,
     glowEnabled: false,
     glowBlur: 0,
+    fillEnabled: true,
+    fillStrength: 0.28,
     markerSize: 3.8,
     markerShape: 'drop',
     color: '#b63a46'
@@ -182,7 +211,9 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     locked: false,
     uiVisible: true,
     allowCameraWhenLocked: true,
-    allowHoverEditor: true,
+    allowHoverEditor: false,
+    linkEditorActivation: 'click',
+    showNodeInfo: true,
     viewerToolbar: true,
     viewerCanPause: true,
     viewerCanChangeLayout: false
@@ -195,9 +226,20 @@ export const DEFAULT_GRAPH_CONFIG = Object.freeze({
     mode: 'viewer'
   },
   ai: {
-    contractVersion: 'graph-studio/1',
+    contractVersion: 'graph-studio/2',
     allowLegacyToolNames: true,
     strictValidation: true
   },
-  performance: { maxDevicePixelRatio: 2 }
+  presets: { active: 'smooth_long' },
+  performance: {
+    maxDevicePixelRatio: 2,
+    targetFps: 60,
+    backgroundCache: true,
+    spatialGridThreshold: 28,
+    spatialGridCellSize: 150,
+    hoverThrottleMs: 24,
+    adaptiveQuality: true,
+    lowFpsThreshold: 38,
+    lowFpsParticleFactor: 0.55
+  }
 });

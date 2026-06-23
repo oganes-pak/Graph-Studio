@@ -1,0 +1,60 @@
+Graph Studio v13 test report
+Date: 2026-06-23
+
+STATUS: PASS for static checks, runtime simulation, MCP store, JSON contracts and HTTP asset delivery.
+
+Automated project check:
+- project files discovered: 104
+- JavaScript/MJS files: 51
+- JSON files: 9
+- HTML IDs: 198
+- UI controller selectors: 165
+- machine tools: 16
+- visual modes: 11
+- syntax validation: PASS
+- JSON validation: PASS
+- relative imports: PASS
+- HTML local assets: PASS
+- UI selector/ID consistency: PASS
+
+Runtime simulation:
+- info: PASS
+- fishbone: 28 nodes / 27 links / finite coordinates
+- flowchart: 19 nodes / 22 links / finite coordinates
+- tree: 25 nodes / 24 links / finite coordinates
+- force: 18 nodes / 30 links / finite coordinates
+- sankey: 21 nodes / 33 links / finite coordinates
+- network: 27 nodes / 32 links / finite coordinates
+- radar: interactive chart regions PASS
+- bubble: 18 bubbles, coordinate drag PASS
+- mindmap: 29 nodes / 28 links / finite coordinates
+- decision: 21 nodes / 20 links / finite coordinates
+
+v12-specific checks:
+- Flowchart/Decision dynamic block width: PASS
+- Sankey non-overlapping columns: PASS
+- duplicate import merge: PASS
+- manual duplicate rejection: PASS
+- node opacity import and scene transfer: PASS
+- automatic demo legend: PASS
+- default arrows disabled: PASS
+- white block text default: PASS
+- filled pulse enabled: PASS
+- six visual presets available: PASS
+- graph-to-info interpretation: PASS
+- info-to-graph interpretation including table rows: PASS
+- MCP ProjectStore document persistence: PASS
+- MCP ProjectStore node opacity persistence: PASS
+
+HTTP delivery:
+- index.html: 200
+- editor.js: 200
+- styles.css: 200
+- graph-widget.js: 200
+- Graph3DEngine.js: 200
+- info-document-renderer.js: 200
+- visual-presets.js: 200
+- tests.html: 200
+
+Chromium note:
+The container Chromium process did not terminate because the application intentionally keeps a requestAnimationFrame render loop alive and this Linux environment also lacks normal DBus/network namespace permissions. A complete human-visible click test must be performed in ordinary Chrome after Docker launch. No successful visual browser test is claimed here.

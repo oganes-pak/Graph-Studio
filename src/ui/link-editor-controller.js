@@ -1,5 +1,6 @@
 /**
- * Контекстный редактор связи v8.
+ * Контекстный редактор связи v13.
+ * Редактор открывается только по клику на связь, а не при наведении.
  * Поля меняют связь в реальном времени как transient-предпросмотр.
  * Кнопка «Применить» повторяет итоговый патч как постоянное изменение.
  * «Отменить» и закрытие восстанавливают исходную связь.
@@ -24,6 +25,7 @@ export class LinkEditorController {
       label: root.querySelector('[data-link-editor-label]'),
       color: root.querySelector('[data-link-editor-color]'),
       width: root.querySelector('[data-link-editor-width]'),
+      value: root.querySelector('[data-link-editor-value]'),
       description: root.querySelector('[data-link-editor-description]'),
       save: root.querySelector('[data-link-editor-save]'),
       cancel: root.querySelector('[data-link-editor-cancel]'),
@@ -32,12 +34,12 @@ export class LinkEditorController {
     };
 
     overlays.register('link-editor', root);
-    this.onHover = (event) => this.handleHover(event.detail);
-    engine.canvas.addEventListener('graph:hoverchange', this.onHover);
+    this.onActivate = (event) => this.handleActivate(event.detail);
+    engine.canvas.addEventListener('graph:linkactivate', this.onActivate);
     root.addEventListener('pointerenter', () => { this.inside = true; clearTimeout(this.hideTimer); });
     root.addEventListener('pointerleave', () => { this.inside = false; this.scheduleHide(); });
 
-    for (const field of [this.fields.label, this.fields.color, this.fields.width, this.fields.description]) {
+    for (const field of [this.fields.label, this.fields.color, this.fields.width, this.fields.value, this.fields.description]) {
       field.addEventListener('input', () => this.schedulePreview());
       field.addEventListener('change', () => this.schedulePreview());
     }
@@ -51,18 +53,15 @@ export class LinkEditorController {
     return (this.engine.config.editor?.mode ?? 'admin') === 'admin';
   }
 
-  handleHover(detail) {
-    if (!this.isAdminMode() || this.engine.config.editor.allowHoverEditor === false) {
+  handleActivate(detail) {
+    if (!this.isAdminMode() || this.engine.isEditingLocked()) {
       this.cancel();
       return;
     }
-    if (detail?.link) {
-      const same = this.current
-        && samePair(this.current.source, this.current.target, detail.link.source, detail.link.target);
-      if (!same) this.show(detail.link, detail.x, detail.y);
-      return;
-    }
-    if (!this.inside) this.scheduleHide();
+    if (!detail?.link) return;
+    const same = this.current
+      && samePair(this.current.source, this.current.target, detail.link.source, detail.link.target);
+    if (!same) this.show(detail.link, detail.x, detail.y);
   }
 
   show(link, x, y) {
@@ -75,9 +74,10 @@ export class LinkEditorController {
     this.fields.label.value = link.label || '';
     this.fields.color.value = normalizeColor(link.color, '#8699a7');
     this.fields.width.value = Number(link.width || 2);
+    this.fields.value.value = Number(link.value ?? 1);
     this.fields.description.value = link.description || '';
     const locked = this.engine.isEditingLocked();
-    for (const field of [this.fields.label, this.fields.color, this.fields.width, this.fields.description]) {
+    for (const field of [this.fields.label, this.fields.color, this.fields.width, this.fields.value, this.fields.description]) {
       field.disabled = locked;
     }
     this.fields.save.disabled = locked;
@@ -100,6 +100,7 @@ export class LinkEditorController {
       label: this.fields.label.value.trim(),
       color: this.fields.color.value,
       width: Number(this.fields.width.value),
+      value: Math.max(0, Number(this.fields.value.value || 0)),
       description: this.fields.description.value.trim()
     };
   }
@@ -146,6 +147,7 @@ export class LinkEditorController {
         label: this.original.label ?? '',
         color: this.original.color,
         width: this.original.width,
+        value: this.original.value ?? 1,
         description: this.original.description ?? ''
       },
       { transient: true }
@@ -183,7 +185,7 @@ export class LinkEditorController {
   destroy() {
     clearTimeout(this.hideTimer);
     cancelAnimationFrame(this.previewFrame);
-    this.engine.canvas.removeEventListener('graph:hoverchange', this.onHover);
+    this.engine.canvas.removeEventListener('graph:linkactivate', this.onActivate);
   }
 }
 

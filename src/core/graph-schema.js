@@ -12,10 +12,13 @@ export function canonicalLinkKey(source, target) {
   return a < b ? `${a}::${b}` : `${b}::${a}`;
 }
 
-export function validateGraphData(data) {
+export function validateGraphData(data, { allowEmptyForChart = true } = {}) {
   if (!isPlainObject(data)) throw new TypeError('Данные графа должны быть объектом.');
   if (!Array.isArray(data.nodes)) throw new TypeError('Поле nodes должно быть массивом.');
   if (!Array.isArray(data.links)) throw new TypeError('Поле links должно быть массивом.');
+  if (data.chart != null && !isPlainObject(data.chart)) {
+    throw new TypeError('Поле chart должно быть объектом.');
+  }
 
   const ids = new Set();
   for (const node of data.nodes) {
@@ -45,6 +48,12 @@ export function validateGraphData(data) {
     const id = String(link.id ?? `${pair}::${index}`);
     if (linkIds.has(id)) throw new Error(`Повторяющийся id связи: ${id}`);
     linkIds.add(id);
+  }
+  if (data.chart?.metrics != null && !Array.isArray(data.chart.metrics)) {
+    throw new TypeError('chart.metrics должно быть массивом.');
+  }
+  if (data.chart?.series != null && !Array.isArray(data.chart.series)) {
+    throw new TypeError('chart.series должно быть массивом.');
   }
   return true;
 }
@@ -119,6 +128,9 @@ export function buildTree(nodes, links, coreId = getCoreId(nodes)) {
 export function normalizeNodeType(node, level, coreId) {
   const raw = String(node.type ?? '').toLowerCase();
   if (node.id === coreId || raw === 'root' || raw === 'core') return 'core';
-  if (['group', 'accent', 'node', 'default'].includes(raw)) return raw;
+  if ([
+    'group', 'accent', 'node', 'default', 'category', 'cause',
+    'process', 'decision', 'chance', 'outcome', 'start', 'end', 'input', 'output'
+  ].includes(raw)) return raw;
   return level === 1 ? 'group' : 'node';
 }
