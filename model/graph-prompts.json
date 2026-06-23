@@ -1,13 +1,13 @@
 {
-  "version": "8.0.0",
+  "version": "13.0.0",
   "prompts": [
     {
-      "name": "edit-graph-safely",
+      "name": "edit-diagram-safely",
       "description": "get_project, одна атомарная команда, повторная проверка."
     },
     {
-      "name": "build-graph-from-text",
-      "description": "Извлечь нейтральную структуру core → group → node без выдуманных оценок."
+      "name": "build-diagram-from-text",
+      "description": "Выбрать один из одиннадцати визуальных режимов и построить валидную структуру."
     }
   ]
 }

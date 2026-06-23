@@ -1,43 +1,257 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "graph-studio/ai-plan-schema/1",
-  "title": "Graph Studio AI Plan",
-  "description": "Простой декларативный формат для построения графа без MCP.",
+  "$id": "graph-studio/ai-plan-schema/3",
+  "title": "Graph Studio v13 AI Plan",
+  "description": "Декларативный формат graph-studio/3 для одиннадцати визуальных режимов.",
   "type": "object",
-  "required": ["format", "nodes", "connections"],
+  "required": [
+    "format",
+    "diagramType"
+  ],
   "additionalProperties": false,
   "properties": {
-    "format": { "const": "graph-studio/1" },
-    "title": { "type": "string" },
+    "format": {
+      "enum": [
+        "graph-studio/3",
+        "graph-studio/2",
+        "graph-studio/1"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "diagramType": {
+      "enum": [
+        "info",
+        "fishbone",
+        "flowchart",
+        "tree",
+        "force",
+        "sankey",
+        "network",
+        "radar",
+        "bubble",
+        "mindmap",
+        "decision"
+      ]
+    },
     "nodes": {
       "type": "array",
+      "default": [],
       "items": {
         "type": "object",
-        "required": ["id", "name"],
-        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": true,
         "properties": {
-          "id": { "type": "string", "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$" },
-          "name": { "type": "string", "minLength": 1 },
-          "type": { "enum": ["core", "group", "node", "accent", "default"] },
-          "description": { "type": "string" },
-          "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
-          "size": { "type": "number", "minimum": 3, "maximum": 100 }
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-zА-Яа-яЁё0-9_-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string"
+          },
+          "shape": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "size": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 1
+          }
         }
       }
     },
     "connections": {
       "type": "array",
+      "default": [],
       "items": {
         "type": "object",
-        "required": ["from", "to"],
-        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          {
+            "required": [
+              "source",
+              "target"
+            ]
+          }
+        ],
+        "additionalProperties": true,
         "properties": {
-          "from": { "type": "string" },
-          "to": { "type": "string" },
-          "label": { "type": "string" },
-          "description": { "type": "string" },
-          "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
-          "width": { "type": "number", "minimum": 0.5, "maximum": 20 }
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 50
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "anyOf": [
+          {
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          {
+            "required": [
+              "source",
+              "target"
+            ]
+          }
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 50
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "maxValue": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "values"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string"
+              },
+              "values": {}
+            },
+            "additionalProperties": true
+          }
         }
       }
     },
@@ -45,11 +259,48 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "layout": { "enum": ["planetary", "hex"] },
-        "mode": { "enum": ["admin", "viewer"] },
-        "legend": { "type": "object" },
-        "appearance": { "type": "object" }
+        "diagramType": {
+          "enum": [
+            "fishbone",
+            "flowchart",
+            "tree",
+            "force",
+            "sankey",
+            "network",
+            "radar",
+            "bubble",
+            "mindmap",
+            "decision"
+          ]
+        },
+        "layout": {
+          "enum": [
+            "planetary",
+            "hex"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        },
+        "legend": {
+          "type": "object"
+        },
+        "appearance": {
+          "type": "object"
+        }
       }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "document": {
+      "type": "object",
+      "description": "Информационная панель: title, subtitle и sections.",
+      "additionalProperties": true
     }
   }
 }

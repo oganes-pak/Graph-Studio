@@ -1,9 +1,25 @@
 {
-  "version": "8.0.0",
+  "version": "13.0.0",
   "resources": [
-    { "uri": "graphstudio://project/current", "description": "Текущий проект" },
-    { "uri": "graphstudio://contracts/tools", "description": "Простые атомарные команды" },
-    { "uri": "graphstudio://contracts/ai-plan", "description": "Схема JSON-плана graph-studio/1" },
-    { "uri": "graphstudio://modules/map", "description": "Карта модулей" }
+    {
+      "uri": "graphstudio://project/current",
+      "description": "Текущий проект и тип диаграммы"
+    },
+    {
+      "uri": "graphstudio://contracts/tools",
+      "description": "17 простых атомарных команд"
+    },
+    {
+      "uri": "graphstudio://contracts/ai-plan",
+      "description": "Схема JSON-плана graph-studio/3"
+    },
+    {
+      "uri": "graphstudio://contracts/info-templates",
+      "description": "Каталог шаблонов информационных секций"
+    },
+    {
+      "uri": "graphstudio://modules/map",
+      "description": "Карта модулей"
+    }
   ]
 }

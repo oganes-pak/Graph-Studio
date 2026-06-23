@@ -1,47 +1,33 @@
-# Graph3DEngine v8
+# Graph3DEngine v9
 
-## Создание
+## Назначение
 
-```js
-import { Graph3DEngine, DEFAULT_GRAPH_CONFIG } from './3d-graph-engine.js';
+`src/engine/Graph3DEngine.js` хранит состояние сцены, камеру, физику, hit-test и Canvas-отрисовку.
+Он не отвечает за формы редактора, MCP или хранение файла.
 
-const engine = new Graph3DEngine({
-  canvas: document.querySelector('canvas'),
-  config: DEFAULT_GRAPH_CONFIG,
-  data: { nodes: [], links: [] }
-});
-engine.start();
-```
-
-## Данные
+## Основные методы
 
 ```js
-{
-  nodes: [{ id, name, type, description?, color?, size? }],
-  links: [{ source, target, label?, description?, color?, width? }]
-}
+engine.setData({ nodes, links, chart });
+engine.setConfig(config);
+engine.updateConfig(patch);
+engine.setDiagramType('fishbone');
+engine.setChartData(chart);
+engine.setLayout('hex');
+engine.addNode(node);
+engine.addLink(link);
+engine.updateNode(id, patch);
+engine.updateLink(from, to, patch);
+engine.removeNode(id);
+engine.removeLink(from, to);
+engine.exportData();
+engine.destroy();
 ```
 
-## Публичные методы
+## Типы диаграмм
 
-- `setData(data, options)`;
-- `addNode(node, parentId?)`;
-- `updateNode(id, changes)`;
-- `removeNode(id)`;
-- `addLink(link)`;
-- `updateLink(source, target, changes)`;
-- `removeLink(source, target)`;
-- `setLayout('planetary' | 'hex')`;
-- `updateConfig(changes)`;
-- `setCameraAngles(x, y)`;
-- `setEditingLocked(boolean)`;
-- `start()`, `pause()`, `resume()`, `destroy()`.
+Выбор выполняет реестр `src/diagrams/registry.js`. Раскладки находятся в `src/layouts/strategies`, специализированная отрисовка в `src/render/diagrams`.
 
-## События Canvas
+## Строгая и мягкая проверка
 
-- `graph:datachange`;
-- `graph:configchange`;
-- `graph:hoverchange`;
-- `graph:lockchange`.
-
-UI должен подписываться на события, а не читать внутренние массивы сцены.
+`Graph3DEngine.setData()` использует строгую `validateGraphData()` и отклоняет дубль связи. Импорт обязан сначала вызвать `normalizeProjectImport()`.

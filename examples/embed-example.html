@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Встраивание Graph Studio v13</title>
+  <style>
+    body { margin:0; padding:28px; background:#f6f8fa; font-family:Inter,Arial,sans-serif; color:#20313d; }
+    main { max-width:1100px; margin:auto; }
+    code { background:#e8eef2; padding:2px 5px; border-radius:5px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Graph Studio как Web Component</h1>
+  <p>Компонент изолирован Shadow DOM и не зависит от CSS этой страницы.</p>
+  <graph-studio-widget
+    id="demo-graph"
+    src="../mcp/graph-project.json"
+    height="640px"
+    layout="planetary"
+    refresh-interval="5000"
+    mode="viewer"
+    controls
+    locked>
+  </graph-studio-widget>
+  <p>Текущий проект доступен через <code>document.querySelector('#demo-graph').getProject()</code>.</p>
+</main>
+<script type="module" src="../graph-widget.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+Graph Studio v10 test report
+============================
+
+Static project check: PASS
+MCP syntax check: PASS
+JavaScript/MJS files: 47
+JSON files: 9
+HTML ids: 173
+Controller selectors: 143
+Machine tools: 15
+Diagram types: 10
+
+Runtime scenarios:
+- Fishbone rich template and animated routes: PASS
+- Flowchart rich template: PASS
+- Tree rich template: PASS
+- Force rich template and finite physics: PASS
+- Sankey responsive columns and non-overlap: PASS
+- Network physics and interaction: PASS
+- Radar point editing: PASS
+- Bubble coordinate dragging: PASS
+- Mind Map rich template: PASS
+- Decision graph rich template: PASS
+- Soft duplicate import: PASS
+- Strict duplicate manual add: PASS
+- Transient preview event: PASS
+- Cross-diagram data interpretation: PASS
+- Read-only overlay policy: PASS by controller/static policy checks
+
+Headless Chromium visual run: NOT COMPLETED
+Reason: container environment restrictions around Chromium/DBus/network namespace.
+Final visual verification should be performed in a normal desktop browser.
